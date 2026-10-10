@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package thoth.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/klaital/thoth/internal/gen/thoth/v1;thothv1";
+
+message BookDvdItem {
+  int64 id = 1;
+  int64 collection_id = 2;
+  string upc = 3;
+  string title = 4;
+  int32 quantity = 5;
+  string notes = 6;
+}
+
+message AddBookDvdItemRequest {
+  int64 collection_id = 1;
+  string upc = 2;
+  string title = 3;
+  int32 quantity = 4;
+  string notes = 5;
+}
+
+message AddBookDvdItemResponse {
+  BookDvdItem item = 1;
+}
+
+message ListBookDvdItemsRequest {
+  int64 collection_id = 1;
+}
+
+message ListBookDvdItemsResponse {
+  repeated BookDvdItem items = 1;
+}
+
+message UpdateBookDvdItemRequest {
+  int64 id = 1;
+  string title = 2;
+  int32 quantity = 3;
+  string notes = 4;
+}
+
+message UpdateBookDvdItemResponse {
+  BookDvdItem item = 1;
+}
+
+message RemoveBookDvdItemRequest {
+  int64 id = 1;
+}
+
+message RemoveBookDvdItemResponse {}
+
+service BookDvdItemService {
+  rpc AddBookDvdItem(AddBookDvdItemRequest) returns (AddBookDvdItemResponse) {
+    option (google.api.http) = {
+      post: "/v1/collections/{collection_id}/items"
+      body: "*"
+    };
+  }
+
+  rpc ListBookDvdItems(ListBookDvdItemsRequest) returns (ListBookDvdItemsResponse) {
+    option (google.api.http) = {
+      get: "/v1/collections/{collection_id}/items"
+    };
+  }
+
+  rpc UpdateBookDvdItem(UpdateBookDvdItemRequest) returns (UpdateBookDvdItemResponse) {
+    option (google.api.http) = {
+      patch: "/v1/items/{id}"
+      body: "*"
+    };
+  }
+
+  rpc RemoveBookDvdItem(RemoveBookDvdItemRequest) returns (RemoveBookDvdItemResponse) {
+    option (google.api.http) = {
+      delete: "/v1/items/{id}"
+    };
+  }
+}

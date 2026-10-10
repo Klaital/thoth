@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package thoth.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/klaital/thoth/internal/gen/thoth/v1;thothv1";
+
+message ScryfallCard {
+  string id = 1;
+  string name = 2;
+  string set_code = 3;
+  string collector_number = 4;
+  string image_uri = 5;
+  // JSON-encoded price map from Scryfall (usd, usd_foil, etc.)
+  string prices_json = 6;
+}
+
+message SearchCardsRequest {
+  string query = 1;
+}
+
+message SearchCardsResponse {
+  repeated ScryfallCard cards = 1;
+}
+
+service ScryfallService {
+  rpc SearchCards(SearchCardsRequest) returns (SearchCardsResponse) {
+    option (google.api.http) = {
+      get: "/v1/scryfall/search"
+    };
+  }
+}

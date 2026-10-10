@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package thoth.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/klaital/thoth/internal/gen/thoth/v1;thothv1";
+
+enum FoilTreatment {
+  FOIL_TREATMENT_UNSPECIFIED = 0;
+  FOIL_TREATMENT_NONFOIL = 1;
+  FOIL_TREATMENT_FOIL = 2;
+  FOIL_TREATMENT_ETCHED = 3;
+}
+
+message CardItem {
+  int64 id = 1;
+  int64 collection_id = 2;
+  string scryfall_card_id = 3;
+  FoilTreatment foil_treatment = 4;
+  int32 quantity = 5;
+  string notes = 6;
+  // Denormalized from scryfall_cards for display convenience.
+  string card_name = 7;
+  string set_code = 8;
+  string image_uri = 9;
+}
+
+message AddCardItemRequest {
+  int64 collection_id = 1;
+  string scryfall_card_id = 2;
+  FoilTreatment foil_treatment = 3;
+  int32 quantity = 4;
+  string notes = 5;
+}
+
+message AddCardItemResponse {
+  CardItem item = 1;
+}
+
+message ListCardItemsRequest {
+  int64 collection_id = 1;
+}
+
+message ListCardItemsResponse {
+  repeated CardItem items = 1;
+}
+
+message UpdateCardItemRequest {
+  int64 id = 1;
+  int32 quantity = 2;
+  string notes = 3;
+}
+
+message UpdateCardItemResponse {
+  CardItem item = 1;
+}
+
+message RemoveCardItemRequest {
+  int64 id = 1;
+}
+
+message RemoveCardItemResponse {}
+
+service CardItemService {
+  rpc AddCardItem(AddCardItemRequest) returns (AddCardItemResponse) {
+    option (google.api.http) = {
+      post: "/v1/collections/{collection_id}/cards"
+      body: "*"
+    };
+  }
+
+  rpc ListCardItems(ListCardItemsRequest) returns (ListCardItemsResponse) {
+    option (google.api.http) = {
+      get: "/v1/collections/{collection_id}/cards"
+    };
+  }
+
+  rpc UpdateCardItem(UpdateCardItemRequest) returns (UpdateCardItemResponse) {
+    option (google.api.http) = {
+      patch: "/v1/cards/{id}"
+      body: "*"
+    };
+  }
+
+  rpc RemoveCardItem(RemoveCardItemRequest) returns (RemoveCardItemResponse) {
+    option (google.api.http) = {
+      delete: "/v1/cards/{id}"
+    };
+  }
+}

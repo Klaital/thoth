@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package thoth.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/klaital/thoth/internal/gen/thoth/v1;thothv1";
+
+enum CollectionType {
+  COLLECTION_TYPE_UNSPECIFIED = 0;
+  COLLECTION_TYPE_MTG_CARDS = 1;
+  COLLECTION_TYPE_MTG_SEALED = 2;
+  COLLECTION_TYPE_MTG_DECK = 3;
+  COLLECTION_TYPE_BOOKS = 4;
+  COLLECTION_TYPE_DVDS = 5;
+}
+
+message Collection {
+  int64 id = 1;
+  int64 owner_id = 2;
+  string name = 3;
+  string description = 4;
+  CollectionType type = 5;
+  bool is_public = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message CreateCollectionRequest {
+  string name = 1;
+  string description = 2;
+  CollectionType type = 3;
+  bool is_public = 4;
+}
+
+message CreateCollectionResponse {
+  Collection collection = 1;
+}
+
+message GetCollectionRequest {
+  int64 id = 1;
+}
+
+message GetCollectionResponse {
+  Collection collection = 1;
+}
+
+message ListCollectionsRequest {
+  // If omitted, returns the authenticated user's collections.
+  optional int64 owner_id = 1;
+}
+
+message ListCollectionsResponse {
+  repeated Collection collections = 1;
+}
+
+message UpdateCollectionRequest {
+  int64 id = 1;
+  string name = 2;
+  string description = 3;
+  bool is_public = 4;
+}
+
+message UpdateCollectionResponse {
+  Collection collection = 1;
+}
+
+message DeleteCollectionRequest {
+  int64 id = 1;
+}
+
+message DeleteCollectionResponse {}
+
+service CollectionService {
+  rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse) {
+    option (google.api.http) = {
+      post: "/v1/collections"
+      body: "*"
+    };
+  }
+
+  rpc GetCollection(GetCollectionRequest) returns (GetCollectionResponse) {
+    option (google.api.http) = {
+      get: "/v1/collections/{id}"
+    };
+  }
+
+  rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse) {
+    option (google.api.http) = {
+      get: "/v1/collections"
+    };
+  }
+
+  rpc UpdateCollection(UpdateCollectionRequest) returns (UpdateCollectionResponse) {
+    option (google.api.http) = {
+      patch: "/v1/collections/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteCollection(DeleteCollectionRequest) returns (DeleteCollectionResponse) {
+    option (google.api.http) = {
+      delete: "/v1/collections/{id}"
+    };
+  }
+}

@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package thoth.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/klaital/thoth/internal/gen/thoth/v1;thothv1";
+
+message SealedItem {
+  int64 id = 1;
+  int64 collection_id = 2;
+  string set_code = 3;
+  string description = 4;
+  int32 quantity = 5;
+  string notes = 6;
+}
+
+message AddSealedItemRequest {
+  int64 collection_id = 1;
+  string set_code = 2;
+  string description = 3;
+  int32 quantity = 4;
+  string notes = 5;
+}
+
+message AddSealedItemResponse {
+  SealedItem item = 1;
+}
+
+message ListSealedItemsRequest {
+  int64 collection_id = 1;
+}
+
+message ListSealedItemsResponse {
+  repeated SealedItem items = 1;
+}
+
+message UpdateSealedItemRequest {
+  int64 id = 1;
+  string description = 2;
+  int32 quantity = 3;
+  string notes = 4;
+}
+
+message UpdateSealedItemResponse {
+  SealedItem item = 1;
+}
+
+message RemoveSealedItemRequest {
+  int64 id = 1;
+}
+
+message RemoveSealedItemResponse {}
+
+service SealedItemService {
+  rpc AddSealedItem(AddSealedItemRequest) returns (AddSealedItemResponse) {
+    option (google.api.http) = {
+      post: "/v1/collections/{collection_id}/sealed"
+      body: "*"
+    };
+  }
+
+  rpc ListSealedItems(ListSealedItemsRequest) returns (ListSealedItemsResponse) {
+    option (google.api.http) = {
+      get: "/v1/collections/{collection_id}/sealed"
+    };
+  }
+
+  rpc UpdateSealedItem(UpdateSealedItemRequest) returns (UpdateSealedItemResponse) {
+    option (google.api.http) = {
+      patch: "/v1/sealed/{id}"
+      body: "*"
+    };
+  }
+
+  rpc RemoveSealedItem(RemoveSealedItemRequest) returns (RemoveSealedItemResponse) {
+    option (google.api.http) = {
+      delete: "/v1/sealed/{id}"
+    };
+  }
+}
