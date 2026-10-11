@@ -1,14 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../api/auth";
-
-interface Collection {
-  id: string;
-  name: string;
-  description: string;
-  type: string;
-  isPublic: boolean;
-}
+import { Collection, COLLECTION_TYPE_LABELS, collectionTypeBadgeClass } from "../api/types";
+import AppLayout from "../components/AppLayout";
 
 export default function CollectionsPage() {
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -21,22 +15,43 @@ export default function CollectionsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p>Loading…</p>;
-
   return (
-    <main>
-      <h1>My Collections</h1>
-      <Link to="/collections/new">New collection</Link>
-      <ul>
-        {collections.map((c) => (
-          <li key={c.id}>
-            <Link to={`/collections/${c.id}`}>{c.name}</Link>
-            {" — "}
-            {c.type}
-          </li>
-        ))}
-      </ul>
-      {collections.length === 0 && <p>No collections yet. Create one!</p>}
-    </main>
+    <AppLayout>
+      <div className="page">
+        <div className="page-header">
+          <h1>My Collections</h1>
+          <Link to="/collections/new">
+            <button className="btn-sm">+ New Collection</button>
+          </Link>
+        </div>
+
+        {loading ? (
+          <p className="loading">Loading…</p>
+        ) : collections.length === 0 ? (
+          <div className="empty-state">
+            <h2>No collections yet</h2>
+            <p>Create your first collection to start tracking your cards, books, or other items.</p>
+            <Link to="/collections/new">
+              <button className="btn-sm">Create a collection</button>
+            </Link>
+          </div>
+        ) : (
+          <div className="collection-grid">
+            {collections.map((c) => (
+              <Link key={c.id} to={`/collections/${c.id}`} className="collection-card">
+                <h2>{c.name}</h2>
+                {c.description && <p className="card-desc">{c.description}</p>}
+                <div className="card-meta">
+                  <span className={collectionTypeBadgeClass(c.type)}>
+                    {COLLECTION_TYPE_LABELS[c.type]}
+                  </span>
+                  {c.isPublic && <span className="badge badge-public">Public</span>}
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+    </AppLayout>
   );
 }

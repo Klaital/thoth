@@ -82,6 +82,7 @@ func main() {
 		grpc.UnaryInterceptor(authInterceptor(jwtSvc)),
 	)
 	thothv1.RegisterUserServiceServer(grpcServer, handler.NewUserHandler(queries, jwtSvc))
+	thothv1.RegisterCollectionServiceServer(grpcServer, handler.NewCollectionHandler(queries))
 	reflection.Register(grpcServer)
 
 	lis, err := net.Listen("tcp", *grpcAddr)
@@ -101,6 +102,9 @@ func main() {
 
 	if err := thothv1.RegisterUserServiceHandlerFromEndpoint(ctx, gwMux, *grpcAddr, dialOpts); err != nil {
 		log.Fatalf("registering user gateway: %v", err)
+	}
+	if err := thothv1.RegisterCollectionServiceHandlerFromEndpoint(ctx, gwMux, *grpcAddr, dialOpts); err != nil {
+		log.Fatalf("registering collection gateway: %v", err)
 	}
 
 	oauthHandlers := handler.NewOAuthHandlers(queries, jwtSvc, googleOAuth, *frontendURL)

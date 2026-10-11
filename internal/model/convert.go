@@ -37,6 +37,66 @@ func UserToProto(u User) *thothv1.User {
 	}
 }
 
+func CollectionFromDB(c db.Collection) Collection {
+	return Collection{
+		ID:          int64(c.ID),
+		OwnerID:     int64(c.OwnerID),
+		Name:        c.Name,
+		Description: c.Description.String,
+		Type:        CollectionType(c.Type),
+		IsPublic:    c.IsPublic,
+		CreatedAt:   c.CreatedAt,
+		UpdatedAt:   c.UpdatedAt,
+	}
+}
+
+func CollectionToProto(c Collection) *thothv1.Collection {
+	return &thothv1.Collection{
+		Id:          c.ID,
+		OwnerId:     c.OwnerID,
+		Name:        c.Name,
+		Description: c.Description,
+		Type:        collectionTypeToProto(c.Type),
+		IsPublic:    c.IsPublic,
+		CreatedAt:   timestamppb.New(c.CreatedAt),
+		UpdatedAt:   timestamppb.New(c.UpdatedAt),
+	}
+}
+
+func collectionTypeToProto(t CollectionType) thothv1.CollectionType {
+	switch t {
+	case CollectionTypeMTGCards:
+		return thothv1.CollectionType_COLLECTION_TYPE_MTG_CARDS
+	case CollectionTypeMTGSealed:
+		return thothv1.CollectionType_COLLECTION_TYPE_MTG_SEALED
+	case CollectionTypeMTGDeck:
+		return thothv1.CollectionType_COLLECTION_TYPE_MTG_DECK
+	case CollectionTypeBooks:
+		return thothv1.CollectionType_COLLECTION_TYPE_BOOKS
+	case CollectionTypeDVDs:
+		return thothv1.CollectionType_COLLECTION_TYPE_DVDS
+	default:
+		return thothv1.CollectionType_COLLECTION_TYPE_UNSPECIFIED
+	}
+}
+
+func CollectionTypeFromProto(t thothv1.CollectionType) CollectionType {
+	switch t {
+	case thothv1.CollectionType_COLLECTION_TYPE_MTG_CARDS:
+		return CollectionTypeMTGCards
+	case thothv1.CollectionType_COLLECTION_TYPE_MTG_SEALED:
+		return CollectionTypeMTGSealed
+	case thothv1.CollectionType_COLLECTION_TYPE_MTG_DECK:
+		return CollectionTypeMTGDeck
+	case thothv1.CollectionType_COLLECTION_TYPE_BOOKS:
+		return CollectionTypeBooks
+	case thothv1.CollectionType_COLLECTION_TYPE_DVDS:
+		return CollectionTypeDVDs
+	default:
+		return CollectionTypeMTGCards
+	}
+}
+
 func NullString(s *string) sql.NullString {
 	if s == nil {
 		return sql.NullString{}
