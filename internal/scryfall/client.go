@@ -1,99 +1,164 @@
 package scryfall
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"time"
 )
 
-const bulkDataURL = "https://api.scryfall.com/bulk-data"
+const (
+	bulkDataURL   = "https://api.scryfall.com/bulk-data/default_cards"
+	cacheFile     = "default_cards.jsonl.gz"
+	cacheMetaFile = "default_cards.jsonl.gz.meta"
 
-type bulkDataEntry struct {
-	Type        string `json:"type"`
-	DownloadURI string `json:"download_uri"`
+	// Scryfall asks clients not to re-fetch bulk data more than once per day.
+	minFetchInterval = 24 * time.Hour
+)
+
+type cacheMeta struct {
+	UpdatedAt time.Time `json:"updated_at"`
+	FetchedAt time.Time `json:"fetched_at"`
 }
 
-type bulkDataResponse struct {
-	Data []bulkDataEntry `json:"data"`
-}
-
-// Card is a minimal subset of a Scryfall card object used for sync.
-type Card struct {
-	ID              string            `json:"id"`
-	Name            string            `json:"name"`
-	Set             string            `json:"set"`
-	CollectorNumber string            `json:"collector_number"`
-	ImageURIs       map[string]string `json:"image_uris"`
-	Prices          map[string]string `json:"prices"`
-}
-
-func fetchDefaultCardsURL(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, bulkDataURL, nil)
+// FetchBulkDataInfo retrieves the current metadata for the default_cards bulk file.
+func FetchBulkDataInfo() (BulkDataInfo, error) {
+	req, err := http.NewRequest(http.MethodGet, bulkDataURL, nil)
 	if err != nil {
-		return "", err
+		return BulkDataInfo{}, err
 	}
-	req.Header.Set("User-Agent", "ThothsCollection/0.1")
+	req.Header.Set("User-Agent", "thoth-collection-manager/1.0")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("fetching bulk data index: %w", err)
+		return BulkDataInfo{}, fmt.Errorf("fetching bulk data info: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var bdr bulkDataResponse
-	if err := json.NewDecoder(resp.Body).Decode(&bdr); err != nil {
-		return "", err
+	if resp.StatusCode != http.StatusOK {
+		return BulkDataInfo{}, fmt.Errorf("bulk data info: HTTP %d", resp.StatusCode)
 	}
 
-	for _, entry := range bdr.Data {
-		if entry.Type == "default_cards" {
-			return entry.DownloadURI, nil
-		}
+	var info BulkDataInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return BulkDataInfo{}, fmt.Errorf("decoding bulk data info: %w", err)
 	}
-	return "", fmt.Errorf("default_cards bulk data entry not found")
+	return info, nil
 }
 
-// StreamCards fetches the Scryfall default_cards bulk file and calls fn for each card.
-// The file is ~200MB; streaming avoids loading it all into memory.
-func StreamCards(ctx context.Context, fn func(Card) error) error {
-	downloadURL, err := fetchDefaultCardsURL(ctx)
+// EnsureCached downloads the bulk data file only if:
+//   - the cache file does not exist, OR
+//   - the Scryfall file was updated after our cached version
+//
+// The download is written to a temp file first and atomically renamed to avoid
+// leaving a partial file on disk if the process is interrupted.
+// Returns true if a new file was downloaded.
+func EnsureCached(info BulkDataInfo, cacheDir string) (bool, error) {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return false, fmt.Errorf("creating cache dir: %w", err)
+	}
+
+	metaPath := filepath.Join(cacheDir, cacheMetaFile)
+	cardPath := filepath.Join(cacheDir, cacheFile)
+
+	// Check whether we already have an up-to-date copy.
+	if meta, err := readMeta(metaPath); err == nil {
+		_, statErr := os.Stat(cardPath)
+		if statErr == nil && !info.UpdatedAt.After(meta.UpdatedAt) {
+			return false, nil // cache is current
+		}
+		// Respect the minimum fetch interval even if the remote claims an update.
+		if statErr == nil && time.Since(meta.FetchedAt) < minFetchInterval {
+			return false, nil
+		}
+	}
+
+	if err := download(info.DownloadURI, cardPath); err != nil {
+		return false, err
+	}
+
+	meta := cacheMeta{UpdatedAt: info.UpdatedAt, FetchedAt: time.Now().UTC()}
+	if err := writeMeta(metaPath, meta); err != nil {
+		return true, fmt.Errorf("writing cache meta: %w", err)
+	}
+	return true, nil
+}
+
+// CacheFilePath returns the path to the cached bulk data JSON file.
+func CacheFilePath(cacheDir string) string {
+	return filepath.Join(cacheDir, cacheFile)
+}
+
+// noDecompressClient is a one-off HTTP client that never transparently inflates
+// gzip responses. We want the raw compressed bytes written to disk.
+var noDecompressClient = &http.Client{
+	Transport: &http.Transport{DisableCompression: true},
+}
+
+func download(uri, destPath string) error {
+	if uri == "" {
+		return fmt.Errorf("no download URI provided")
+	}
+	req, err := http.NewRequest(http.MethodGet, uri, nil)
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", "thoth-collection-manager/1.0")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", "ThothsCollection/0.1")
-
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := noDecompressClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("downloading bulk data: %w", err)
 	}
 	defer resp.Body.Close()
 
-	return streamDecodeCards(resp.Body, fn)
-}
-
-func streamDecodeCards(r io.Reader, fn func(Card) error) error {
-	dec := json.NewDecoder(r)
-
-	// Read opening '['
-	if _, err := dec.Token(); err != nil {
-		return fmt.Errorf("reading opening bracket: %w", err)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("downloading bulk data: HTTP %d", resp.StatusCode)
 	}
 
-	for dec.More() {
-		var card Card
-		if err := dec.Decode(&card); err != nil {
-			return fmt.Errorf("decoding card: %w", err)
-		}
-		if err := fn(card); err != nil {
-			return err
-		}
+	// Write to a temp file in the same directory, then rename for atomicity.
+	tmp, err := os.CreateTemp(filepath.Dir(destPath), "scryfall-*.json.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		tmp.Close()
+		os.Remove(tmpName) // no-op if rename succeeded
+	}()
+
+	if _, err := io.Copy(tmp, resp.Body); err != nil {
+		return fmt.Errorf("writing bulk data: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+	if err := os.Rename(tmpName, destPath); err != nil {
+		return fmt.Errorf("moving bulk data into place: %w", err)
 	}
 	return nil
+}
+
+func readMeta(path string) (cacheMeta, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return cacheMeta{}, err
+	}
+	defer f.Close()
+	var m cacheMeta
+	return m, json.NewDecoder(f).Decode(&m)
+}
+
+func writeMeta(path string, m cacheMeta) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	return enc.Encode(m)
 }
