@@ -1,6 +1,7 @@
-.PHONY: proto sqlc build frontend lint dev install-tools
+.PHONY: proto sqlc build build-sync frontend lint dev install-tools
 
-BIN := bin/server
+BIN     := bin/server
+BIN_SYNC := bin/sync
 PROTO_OUT_GO := internal/gen
 PROTO_OUT_TS := frontend/src/gen
 
@@ -25,6 +26,10 @@ sqlc:
 ## Compile the Go server binary
 build:
 	go build -o $(BIN) ./cmd/server
+
+## Compile the Scryfall sync CLI
+build-sync:
+	go build -o $(BIN_SYNC) ./cmd/sync
 
 ## Build the frontend for production
 frontend:

@@ -1,3 +1,45 @@
+export type FoilTreatment =
+  | "FOIL_TREATMENT_NONFOIL"
+  | "FOIL_TREATMENT_FOIL"
+  | "FOIL_TREATMENT_ETCHED";
+
+export const FOIL_TREATMENT_LABELS: Record<FoilTreatment, string> = {
+  FOIL_TREATMENT_NONFOIL: "Non-foil",
+  FOIL_TREATMENT_FOIL:    "Foil",
+  FOIL_TREATMENT_ETCHED:  "Etched",
+};
+
+export interface CardItem {
+  id: string;
+  collectionId: string;
+  scryfallCardId: string;
+  foilTreatment: FoilTreatment;
+  quantity: number;
+  notes: string;
+  cardName: string;
+  setCode: string;
+  collectorNumber: string;
+  imageUri: string;
+}
+
+export interface SealedItem {
+  id: string;
+  collectionId: string;
+  setCode: string;
+  description: string;
+  quantity: number;
+  notes: string;
+}
+
+export interface BookDvdItem {
+  id: string;
+  collectionId: string;
+  upc: string;
+  title: string;
+  quantity: number;
+  notes: string;
+}
+
 export type CollectionType =
   | "COLLECTION_TYPE_MTG_CARDS"
   | "COLLECTION_TYPE_MTG_SEALED"

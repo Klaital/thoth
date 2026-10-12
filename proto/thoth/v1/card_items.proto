@@ -24,6 +24,7 @@ message CardItem {
   string card_name = 7;
   string set_code = 8;
   string image_uri = 9;
+  string collector_number = 10;
 }
 
 message AddCardItemRequest {

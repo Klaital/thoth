@@ -342,3 +342,56 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 /* ── Loading / error states ── */
 .loading { color: var(--text-muted); padding: 48px; text-align: center; }
 .error-page { color: var(--danger); padding: 48px; text-align: center; }
+
+/* ── Item list ── */
+.item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.card-thumb {
+  width: 40px;
+  flex-shrink: 0;
+  border-radius: 3px;
+}
+.item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.item-name {
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.item-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.item-notes {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.item-qty {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}

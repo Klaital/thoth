@@ -83,6 +83,10 @@ func main() {
 	)
 	thothv1.RegisterUserServiceServer(grpcServer, handler.NewUserHandler(queries, jwtSvc))
 	thothv1.RegisterCollectionServiceServer(grpcServer, handler.NewCollectionHandler(queries))
+	thothv1.RegisterCardItemServiceServer(grpcServer, handler.NewCardItemHandler(queries))
+	thothv1.RegisterSealedItemServiceServer(grpcServer, handler.NewSealedItemHandler(queries))
+	thothv1.RegisterBookDvdItemServiceServer(grpcServer, handler.NewBookDvdItemHandler(queries))
+	thothv1.RegisterScryfallServiceServer(grpcServer, handler.NewScryfallHandler(queries))
 	reflection.Register(grpcServer)
 
 	lis, err := net.Listen("tcp", *grpcAddr)
@@ -105,6 +109,18 @@ func main() {
 	}
 	if err := thothv1.RegisterCollectionServiceHandlerFromEndpoint(ctx, gwMux, *grpcAddr, dialOpts); err != nil {
 		log.Fatalf("registering collection gateway: %v", err)
+	}
+	if err := thothv1.RegisterCardItemServiceHandlerFromEndpoint(ctx, gwMux, *grpcAddr, dialOpts); err != nil {
+		log.Fatalf("registering card item gateway: %v", err)
+	}
+	if err := thothv1.RegisterSealedItemServiceHandlerFromEndpoint(ctx, gwMux, *grpcAddr, dialOpts); err != nil {
+		log.Fatalf("registering sealed item gateway: %v", err)
+	}
+	if err := thothv1.RegisterBookDvdItemServiceHandlerFromEndpoint(ctx, gwMux, *grpcAddr, dialOpts); err != nil {
+		log.Fatalf("registering book/dvd item gateway: %v", err)
+	}
+	if err := thothv1.RegisterScryfallServiceHandlerFromEndpoint(ctx, gwMux, *grpcAddr, dialOpts); err != nil {
+		log.Fatalf("registering scryfall gateway: %v", err)
 	}
 
 	oauthHandlers := handler.NewOAuthHandlers(queries, jwtSvc, googleOAuth, *frontendURL)

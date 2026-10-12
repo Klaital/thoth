@@ -97,6 +97,113 @@ func CollectionTypeFromProto(t thothv1.CollectionType) CollectionType {
 	}
 }
 
+func CardItemFromDB(r db.ListCardItemsByCollectionRow) CardItem {
+	return CardItem{
+		ID:              int64(r.ID),
+		CollectionID:    int64(r.CollectionID),
+		ScryfallCardID:  r.ScryfallCardID,
+		FoilTreatment:   FoilTreatment(r.FoilTreatment),
+		Quantity:        r.Quantity,
+		Notes:           r.Notes.String,
+		CardName:        r.CardName,
+		SetCode:         r.SetCode,
+		CollectorNumber: r.CollectorNumber,
+		ImageURI:        r.ImageUri.String,
+	}
+}
+
+func CardItemToProto(c CardItem) *thothv1.CardItem {
+	return &thothv1.CardItem{
+		Id:              c.ID,
+		CollectionId:    c.CollectionID,
+		ScryfallCardId:  c.ScryfallCardID,
+		FoilTreatment:   foilTreatmentToProto(c.FoilTreatment),
+		Quantity:        c.Quantity,
+		Notes:           c.Notes,
+		CardName:        c.CardName,
+		SetCode:         c.SetCode,
+		CollectorNumber: c.CollectorNumber,
+		ImageUri:        c.ImageURI,
+	}
+}
+
+func foilTreatmentToProto(f FoilTreatment) thothv1.FoilTreatment {
+	switch f {
+	case FoilTreatmentFoil:
+		return thothv1.FoilTreatment_FOIL_TREATMENT_FOIL
+	case FoilTreatmentEtched:
+		return thothv1.FoilTreatment_FOIL_TREATMENT_ETCHED
+	default:
+		return thothv1.FoilTreatment_FOIL_TREATMENT_NONFOIL
+	}
+}
+
+func FoilTreatmentFromProto(f thothv1.FoilTreatment) FoilTreatment {
+	switch f {
+	case thothv1.FoilTreatment_FOIL_TREATMENT_FOIL:
+		return FoilTreatmentFoil
+	case thothv1.FoilTreatment_FOIL_TREATMENT_ETCHED:
+		return FoilTreatmentEtched
+	default:
+		return FoilTreatmentNonfoil
+	}
+}
+
+func SealedItemFromDB(r db.SealedItem) SealedItem {
+	return SealedItem{
+		ID:           int64(r.ID),
+		CollectionID: int64(r.CollectionID),
+		SetCode:      r.SetCode,
+		Description:  r.Description.String,
+		Quantity:     r.Quantity,
+		Notes:        r.Notes.String,
+	}
+}
+
+func SealedItemToProto(s SealedItem) *thothv1.SealedItem {
+	return &thothv1.SealedItem{
+		Id:           s.ID,
+		CollectionId: s.CollectionID,
+		SetCode:      s.SetCode,
+		Description:  s.Description,
+		Quantity:     s.Quantity,
+		Notes:        s.Notes,
+	}
+}
+
+func BookDvdItemFromDB(r db.BookDvdItem) BookDvdItem {
+	return BookDvdItem{
+		ID:           int64(r.ID),
+		CollectionID: int64(r.CollectionID),
+		UPC:          r.Upc,
+		Title:        r.Title,
+		Quantity:     r.Quantity,
+		Notes:        r.Notes.String,
+	}
+}
+
+func BookDvdItemToProto(b BookDvdItem) *thothv1.BookDvdItem {
+	return &thothv1.BookDvdItem{
+		Id:           b.ID,
+		CollectionId: b.CollectionID,
+		Upc:          b.UPC,
+		Title:        b.Title,
+		Quantity:     b.Quantity,
+		Notes:        b.Notes,
+	}
+}
+
+func ScryfallCardToProto(s db.ScryfallCard) *thothv1.ScryfallCard {
+	return &thothv1.ScryfallCard{
+		Id:              s.ID,
+		Name:            s.Name,
+		SetCode:         s.SetCode,
+		CollectorNumber: s.CollectorNumber,
+		ImageUri:        s.ImageUri.String,
+		PricesJson:      string(s.PricesJson),
+	}
+}
+
 func NullString(s *string) sql.NullString {
 	if s == nil {
 		return sql.NullString{}

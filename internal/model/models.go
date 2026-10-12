@@ -49,6 +49,7 @@ type CardItem struct {
 	Notes           string
 	CardName        string
 	SetCode         string
+	CollectorNumber string
 	ImageURI        string
 }
 
