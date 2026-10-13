@@ -44,7 +44,7 @@ export default function CollectionDetailPage() {
     setItems(data.items ?? []);
   }
 
-  async function handleDelete() {
+  async function handleDeleteCollection() {
     if (!confirm("Delete this collection? This cannot be undone.")) return;
     setDeleting(true);
     const resp = await apiFetch(`/v1/collections/${id}`, { method: "DELETE" });
@@ -52,6 +52,56 @@ export default function CollectionDetailPage() {
       navigate("/collections");
     } else {
       setDeleting(false);
+    }
+  }
+
+  async function handleRemoveItem(itemId: string) {
+    if (!collection) return;
+    const endpoint = removeEndpoint(collection.type, itemId);
+    if (!endpoint) return;
+    const resp = await apiFetch(endpoint, { method: "DELETE" });
+    if (resp.ok) {
+      setItems((prev) => prev ? (prev as Array<{ id: string }>).filter((i) => i.id !== itemId) as typeof prev : prev);
+    }
+  }
+
+  async function handleQuantityChange(itemId: string, delta: 1 | -1) {
+    if (!collection) return;
+    const endpoint = updateEndpoint(collection.type, itemId);
+    if (!endpoint) return;
+
+    // Build body, preserving non-quantity fields, and optimistically update state.
+    const current = (items as Array<{ id: string; quantity: number }>).find((i) => i.id === itemId);
+    if (!current) return;
+    const newQty = Math.max(1, current.quantity + delta);
+    if (newQty === current.quantity) return;
+
+    // Optimistic update.
+    setItems((prev) =>
+      prev ? (prev as Array<{ id: string; quantity: number }>).map((i) =>
+        i.id === itemId ? { ...i, quantity: newQty } : i
+      ) as typeof prev : prev
+    );
+
+    const body = buildUpdateBody(collection.type, items!, itemId, newQty);
+    const resp = await apiFetch(endpoint, { method: "PATCH", body: JSON.stringify(body) });
+    if (resp.ok) {
+      const data = await resp.json();
+      const updated = data.item;
+      if (updated) {
+        setItems((prev) =>
+          prev ? (prev as Array<{ id: string }>).map((i) =>
+            i.id === itemId ? { ...i, ...updated } : i
+          ) as typeof prev : prev
+        );
+      }
+    } else {
+      // Revert on failure.
+      setItems((prev) =>
+        prev ? (prev as Array<{ id: string; quantity: number }>).map((i) =>
+          i.id === itemId ? { ...i, quantity: current.quantity } : i
+        ) as typeof prev : prev
+      );
     }
   }
 
@@ -70,7 +120,7 @@ export default function CollectionDetailPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
             <h1>{collection.name}</h1>
             {isOwner && (
-              <button className="btn-danger" onClick={handleDelete} disabled={deleting}>
+              <button className="btn-danger" onClick={handleDeleteCollection} disabled={deleting}>
                 {deleting ? "Deleting…" : "Delete"}
               </button>
             )}
@@ -100,26 +150,85 @@ export default function CollectionDetailPage() {
             <p>No items yet.{isOwner ? " Add one to get started." : ""}</p>
           </div>
         ) : (
-          <ItemList collection={collection} items={items} />
+          <ItemList
+            collection={collection}
+            items={items}
+            isOwner={!!isOwner}
+            onRemove={handleRemoveItem}
+            onQuantityChange={handleQuantityChange}
+          />
         )}
       </div>
     </AppLayout>
   );
 }
 
-function ItemList({ collection, items }: { collection: Collection; items: CardItem[] | SealedItem[] | BookDvdItem[] }) {
-  const type = collection.type;
-
-  if (type === "COLLECTION_TYPE_MTG_CARDS" || type === "COLLECTION_TYPE_MTG_DECK") {
-    return <CardItemList items={items as CardItem[]} />;
-  }
-  if (type === "COLLECTION_TYPE_MTG_SEALED") {
-    return <SealedItemList items={items as SealedItem[]} />;
-  }
-  return <BookDvdItemList items={items as BookDvdItem[]} />;
+interface ItemListProps {
+  collection: Collection;
+  items: CardItem[] | SealedItem[] | BookDvdItem[];
+  isOwner: boolean;
+  onRemove: (id: string) => void;
+  onQuantityChange: (id: string, delta: 1 | -1) => void;
 }
 
-function CardItemList({ items }: { items: CardItem[] }) {
+function ItemList({ collection, items, isOwner, onRemove, onQuantityChange }: ItemListProps) {
+  const type = collection.type;
+  if (type === "COLLECTION_TYPE_MTG_CARDS" || type === "COLLECTION_TYPE_MTG_DECK") {
+    return <CardItemList items={items as CardItem[]} isOwner={isOwner} onRemove={onRemove} onQuantityChange={onQuantityChange} />;
+  }
+  if (type === "COLLECTION_TYPE_MTG_SEALED") {
+    return <SealedItemList items={items as SealedItem[]} isOwner={isOwner} onRemove={onRemove} onQuantityChange={onQuantityChange} />;
+  }
+  return <BookDvdItemList items={items as BookDvdItem[]} isOwner={isOwner} onRemove={onRemove} onQuantityChange={onQuantityChange} />;
+}
+
+interface RowProps {
+  isOwner: boolean;
+  onRemove: (id: string) => void;
+  onQuantityChange: (id: string, delta: 1 | -1) => void;
+}
+
+function RemoveButton({ onRemove }: { onRemove: () => void }) {
+  return (
+    <button
+      className="btn-ghost"
+      onClick={onRemove}
+      title="Remove from collection"
+      style={{ color: "var(--danger)", flexShrink: 0, padding: "4px 8px", fontSize: 13 }}
+    >
+      ✕
+    </button>
+  );
+}
+
+function QuantityStepper({ id, quantity, isOwner, onQuantityChange }: {
+  id: string;
+  quantity: number;
+  isOwner: boolean;
+  onQuantityChange: (id: string, delta: 1 | -1) => void;
+}) {
+  if (!isOwner) {
+    return <span className="item-qty">×{quantity}</span>;
+  }
+  return (
+    <div className="qty-stepper">
+      <button
+        className="btn-ghost"
+        onClick={() => onQuantityChange(id, -1)}
+        disabled={quantity <= 1}
+        aria-label="Decrease quantity"
+      >−</button>
+      <span className="item-qty">{quantity}</span>
+      <button
+        className="btn-ghost"
+        onClick={() => onQuantityChange(id, 1)}
+        aria-label="Increase quantity"
+      >+</button>
+    </div>
+  );
+}
+
+function CardItemList({ items, isOwner, onRemove, onQuantityChange }: { items: CardItem[] } & RowProps) {
   return (
     <div className="item-list">
       {items.map((item) => (
@@ -134,14 +243,15 @@ function CardItemList({ items }: { items: CardItem[] }) {
             </span>
             {item.notes && <span className="item-notes">{item.notes}</span>}
           </div>
-          <span className="item-qty">×{item.quantity}</span>
+          <QuantityStepper id={item.id} quantity={item.quantity} isOwner={isOwner} onQuantityChange={onQuantityChange} />
+          {isOwner && <RemoveButton onRemove={() => onRemove(item.id)} />}
         </div>
       ))}
     </div>
   );
 }
 
-function SealedItemList({ items }: { items: SealedItem[] }) {
+function SealedItemList({ items, isOwner, onRemove, onQuantityChange }: { items: SealedItem[] } & RowProps) {
   return (
     <div className="item-list">
       {items.map((item) => (
@@ -151,14 +261,15 @@ function SealedItemList({ items }: { items: SealedItem[] }) {
             {item.description && <span className="item-meta">{item.description}</span>}
             {item.notes && <span className="item-notes">{item.notes}</span>}
           </div>
-          <span className="item-qty">×{item.quantity}</span>
+          <QuantityStepper id={item.id} quantity={item.quantity} isOwner={isOwner} onQuantityChange={onQuantityChange} />
+          {isOwner && <RemoveButton onRemove={() => onRemove(item.id)} />}
         </div>
       ))}
     </div>
   );
 }
 
-function BookDvdItemList({ items }: { items: BookDvdItem[] }) {
+function BookDvdItemList({ items, isOwner, onRemove, onQuantityChange }: { items: BookDvdItem[] } & RowProps) {
   return (
     <div className="item-list">
       {items.map((item) => (
@@ -168,7 +279,8 @@ function BookDvdItemList({ items }: { items: BookDvdItem[] }) {
             {item.upc && <span className="item-meta">UPC: {item.upc}</span>}
             {item.notes && <span className="item-notes">{item.notes}</span>}
           </div>
-          <span className="item-qty">×{item.quantity}</span>
+          <QuantityStepper id={item.id} quantity={item.quantity} isOwner={isOwner} onQuantityChange={onQuantityChange} />
+          {isOwner && <RemoveButton onRemove={() => onRemove(item.id)} />}
         </div>
       ))}
     </div>
@@ -188,6 +300,54 @@ function itemsEndpoint(type: Collection["type"], id: string): string | null {
     default:
       return null;
   }
+}
+
+function removeEndpoint(type: Collection["type"], itemId: string): string | null {
+  switch (type) {
+    case "COLLECTION_TYPE_MTG_CARDS":
+    case "COLLECTION_TYPE_MTG_DECK":
+      return `/v1/cards/${itemId}`;
+    case "COLLECTION_TYPE_MTG_SEALED":
+      return `/v1/sealed/${itemId}`;
+    case "COLLECTION_TYPE_BOOKS":
+    case "COLLECTION_TYPE_DVDS":
+      return `/v1/items/${itemId}`;
+    default:
+      return null;
+  }
+}
+
+function updateEndpoint(type: Collection["type"], itemId: string): string | null {
+  switch (type) {
+    case "COLLECTION_TYPE_MTG_CARDS":
+    case "COLLECTION_TYPE_MTG_DECK":
+      return `/v1/cards/${itemId}`;
+    case "COLLECTION_TYPE_MTG_SEALED":
+      return `/v1/sealed/${itemId}`;
+    case "COLLECTION_TYPE_BOOKS":
+    case "COLLECTION_TYPE_DVDS":
+      return `/v1/items/${itemId}`;
+    default:
+      return null;
+  }
+}
+
+function buildUpdateBody(
+  type: Collection["type"],
+  items: CardItem[] | SealedItem[] | BookDvdItem[],
+  itemId: string,
+  newQty: number,
+): Record<string, unknown> {
+  if (type === "COLLECTION_TYPE_MTG_CARDS" || type === "COLLECTION_TYPE_MTG_DECK") {
+    const item = (items as CardItem[]).find((i) => i.id === itemId)!;
+    return { quantity: newQty, notes: item.notes };
+  }
+  if (type === "COLLECTION_TYPE_MTG_SEALED") {
+    const item = (items as SealedItem[]).find((i) => i.id === itemId)!;
+    return { description: item.description, quantity: newQty, notes: item.notes };
+  }
+  const item = (items as BookDvdItem[]).find((i) => i.id === itemId)!;
+  return { title: item.title, quantity: newQty, notes: item.notes };
 }
 
 function parseUserId(token: string): number | null {

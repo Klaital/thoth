@@ -4,9 +4,10 @@ import { apiFetch } from "../api/auth";
 interface Props {
   collectionId: number;
   onSuccess: () => void;
+  onItemAdded?: () => void;
 }
 
-export default function AddBookDvdItemForm({ collectionId, onSuccess }: Props) {
+export default function AddBookDvdItemForm({ collectionId, onSuccess, onItemAdded }: Props) {
   const [title, setTitle] = useState("");
   const [upc, setUpc] = useState("");
   const [quantity, setQuantity] = useState(1);
@@ -37,6 +38,7 @@ export default function AddBookDvdItemForm({ collectionId, onSuccess }: Props) {
         setError("Failed to add item.");
         return;
       }
+      onItemAdded?.();
       onSuccess();
     } finally {
       setSubmitting(false);

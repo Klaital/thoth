@@ -4,6 +4,13 @@ WHERE name LIKE CONCAT('%', ?, '%')
 ORDER BY name
 LIMIT 20;
 
+-- name: SearchScryfallCardsBySet :many
+SELECT * FROM scryfall_cards
+WHERE name LIKE CONCAT('%', ?, '%')
+  AND set_code = ?
+ORDER BY name
+LIMIT 20;
+
 -- name: GetScryfallCardByID :one
 SELECT * FROM scryfall_cards WHERE id = ? LIMIT 1;
 

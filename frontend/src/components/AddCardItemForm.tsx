@@ -3,7 +3,8 @@ import { apiFetch } from "../api/auth";
 
 interface Props {
   collectionId: number;
-  onSuccess: () => void;
+  onDone: () => void;
+  onItemAdded?: () => void;
 }
 
 interface ScryfallCard {
@@ -20,8 +21,9 @@ const FOIL_OPTIONS = [
   { value: "FOIL_TREATMENT_ETCHED",  label: "Etched" },
 ];
 
-export default function AddCardItemForm({ collectionId, onSuccess }: Props) {
+export default function AddCardItemForm({ collectionId, onDone, onItemAdded }: Props) {
   const [query, setQuery] = useState("");
+  const [setCode, setSetCode] = useState("");
   const [results, setResults] = useState<ScryfallCard[]>([]);
   const [selected, setSelected] = useState<ScryfallCard | null>(null);
   const [foil, setFoil] = useState("FOIL_TREATMENT_NONFOIL");
@@ -30,13 +32,17 @@ export default function AddCardItemForm({ collectionId, onSuccess }: Props) {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [lastAdded, setLastAdded] = useState<string | null>(null);
 
   async function handleSearch() {
     if (query.trim().length < 2) return;
+    setLastAdded(null);
     setSearching(true);
     setResults([]);
     try {
-      const resp = await apiFetch(`/v1/scryfall/search?query=${encodeURIComponent(query)}`);
+      const params = new URLSearchParams({ query });
+      if (setCode.trim()) params.set("setCode", setCode.trim().toLowerCase());
+      const resp = await apiFetch(`/v1/scryfall/search?${params}`);
       const data = await resp.json();
       setResults(data.cards ?? []);
     } finally {
@@ -64,7 +70,16 @@ export default function AddCardItemForm({ collectionId, onSuccess }: Props) {
         setError("Failed to add card.");
         return;
       }
-      onSuccess();
+      // Stay on the page; reset to search but keep set code and show confirmation.
+      const addedName = selected.name;
+      setSelected(null);
+      setResults([]);
+      setQuery("");
+      setFoil("FOIL_TREATMENT_NONFOIL");
+      setQuantity(1);
+      setNotes("");
+      setLastAdded(addedName);
+      onItemAdded?.();
     } finally {
       setSubmitting(false);
     }
@@ -72,21 +87,41 @@ export default function AddCardItemForm({ collectionId, onSuccess }: Props) {
 
   return (
     <form onSubmit={handleSubmit}>
+      {lastAdded && (
+        <div className="success-banner" role="status">
+          ✓ {lastAdded} added.
+        </div>
+      )}
+
       {!selected ? (
         <>
-          <div className="field">
-            <label htmlFor="card-search">Search for a card</label>
-            <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <div className="field" style={{ flex: "0 0 80px", marginBottom: 0 }}>
+              <label htmlFor="set-filter">Set</label>
               <input
-                id="card-search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                id="set-filter"
+                value={setCode}
+                onChange={(e) => setSetCode(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleSearch())}
-                placeholder="Card name…"
+                placeholder="e.g. mh3"
+                maxLength={8}
+                style={{ textTransform: "lowercase" }}
               />
-              <button type="button" className="btn-sm" onClick={handleSearch} disabled={searching} style={{ flexShrink: 0 }}>
-                {searching ? "…" : "Search"}
-              </button>
+            </div>
+            <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+              <label htmlFor="card-search">Card name</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  id="card-search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleSearch())}
+                  placeholder="Name…"
+                />
+                <button type="button" className="btn-sm" onClick={handleSearch} disabled={searching} style={{ flexShrink: 0 }}>
+                  {searching ? "…" : "Search"}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -97,7 +132,7 @@ export default function AddCardItemForm({ collectionId, onSuccess }: Props) {
                   key={card.id}
                   type="button"
                   className="type-option"
-                  onClick={() => setSelected(card)}
+                  onClick={() => { setSelected(card); setLastAdded(null); }}
                   style={{ display: "flex", alignItems: "center", gap: 12 }}
                 >
                   {card.imageUri && (
@@ -116,6 +151,10 @@ export default function AddCardItemForm({ collectionId, onSuccess }: Props) {
           {results.length === 0 && query && !searching && (
             <p style={{ color: "var(--text-muted)", fontSize: 13 }}>No results. Try running a Scryfall sync first.</p>
           )}
+
+          <button type="button" className="btn-ghost" onClick={onDone} style={{ marginTop: 8 }}>
+            ← Done adding cards
+          </button>
         </>
       ) : (
         <>

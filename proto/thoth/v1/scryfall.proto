@@ -18,6 +18,7 @@ message ScryfallCard {
 
 message SearchCardsRequest {
   string query = 1;
+  string set_code = 2;
 }
 
 message SearchCardsResponse {

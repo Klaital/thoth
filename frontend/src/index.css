@@ -339,6 +339,78 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   flex-shrink: 0;
 }
 
+/* ── Add item layout ── */
+.add-item-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+.add-item-layout .form-card {
+  flex: 0 0 420px;
+  min-width: 0;
+}
+.recent-items-panel {
+  flex: 1;
+  min-width: 0;
+}
+.recent-items-panel h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 12px;
+}
+.recent-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.recent-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  gap: 8px;
+}
+.recent-qty {
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.recent-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+@media (max-width: 700px) {
+  .add-item-layout {
+    flex-direction: column;
+  }
+  .add-item-layout .form-card {
+    flex: none;
+    width: 100%;
+  }
+}
+
+/* ── Success banner ── */
+.success-banner {
+  background: rgba(72, 199, 142, 0.12);
+  border: 1px solid rgba(72, 199, 142, 0.4);
+  color: #48c78e;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
 /* ── Loading / error states ── */
 .loading { color: var(--text-muted); padding: 48px; text-align: center; }
 .error-page { color: var(--danger); padding: 48px; text-align: center; }
@@ -394,4 +466,19 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   font-weight: 600;
   color: var(--text-muted);
   flex-shrink: 0;
+}
+.qty-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.qty-stepper .btn-ghost {
+  padding: 2px 8px;
+  font-size: 16px;
+  line-height: 1;
+}
+.qty-stepper .btn-ghost:disabled {
+  opacity: 0.3;
+  cursor: default;
 }

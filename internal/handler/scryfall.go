@@ -24,7 +24,16 @@ func (h *ScryfallHandler) SearchCards(ctx context.Context, req *thothv1.SearchCa
 	if req.Query == "" {
 		return &thothv1.SearchCardsResponse{}, nil
 	}
-	rows, err := h.queries.SearchScryfallCards(ctx, req.Query)
+	var rows []db.ScryfallCard
+	var err error
+	if req.SetCode != "" {
+		rows, err = h.queries.SearchScryfallCardsBySet(ctx, db.SearchScryfallCardsBySetParams{
+			CONCAT:  req.Query,
+			SetCode: req.SetCode,
+		})
+	} else {
+		rows, err = h.queries.SearchScryfallCards(ctx, req.Query)
+	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, "search failed")
 	}
