@@ -25,6 +25,8 @@ message CardItem {
   string set_code = 8;
   string image_uri = 9;
   string collector_number = 10;
+  // JSON-encoded price map from Scryfall (usd, usd_foil, usd_etched, etc.)
+  string prices_json = 11;
 }
 
 message AddCardItemRequest {

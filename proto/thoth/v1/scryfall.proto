@@ -14,6 +14,8 @@ message ScryfallCard {
   string image_uri = 5;
   // JSON-encoded price map from Scryfall (usd, usd_foil, etc.)
   string prices_json = 6;
+  bool foil = 7;
+  bool nonfoil = 8;
 }
 
 message SearchCardsRequest {

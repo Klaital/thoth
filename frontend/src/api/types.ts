@@ -20,6 +20,7 @@ export interface CardItem {
   setCode: string;
   collectorNumber: string;
   imageUri: string;
+  pricesJson: string;
 }
 
 export interface SealedItem {

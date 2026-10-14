@@ -29,6 +29,8 @@ type RawCard struct {
 	ImageURIs       *imageURIs     `json:"image_uris"`
 	CardFaces       []cardFace     `json:"card_faces"`
 	Prices          map[string]any `json:"prices"`
+	Foil            bool           `json:"foil"`
+	Nonfoil         bool           `json:"nonfoil"`
 }
 
 // BestImageURI returns the normal image URI, falling back to the first card face

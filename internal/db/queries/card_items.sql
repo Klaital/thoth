@@ -1,11 +1,11 @@
 -- name: GetCardItemByID :one
-SELECT ci.*, sc.name AS card_name, sc.set_code, sc.collector_number, sc.image_uri
+SELECT ci.*, sc.name AS card_name, sc.set_code, sc.collector_number, sc.image_uri, sc.prices_json
 FROM card_items ci
 JOIN scryfall_cards sc ON sc.id = ci.scryfall_card_id
 WHERE ci.id = ? LIMIT 1;
 
 -- name: ListCardItemsByCollection :many
-SELECT ci.*, sc.name AS card_name, sc.set_code, sc.collector_number, sc.image_uri
+SELECT ci.*, sc.name AS card_name, sc.set_code, sc.collector_number, sc.image_uri, sc.prices_json
 FROM card_items ci
 JOIN scryfall_cards sc ON sc.id = ci.scryfall_card_id
 WHERE ci.collection_id = ?

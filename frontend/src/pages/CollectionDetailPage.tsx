@@ -228,26 +228,73 @@ function QuantityStepper({ id, quantity, isOwner, onQuantityChange }: {
   );
 }
 
+function unitPrice(item: CardItem): number | null {
+  if (!item.pricesJson) return null;
+  try {
+    const p: Record<string, string | null> = JSON.parse(item.pricesJson);
+    const key =
+      item.foilTreatment === "FOIL_TREATMENT_FOIL"   ? "usd_foil"   :
+      item.foilTreatment === "FOIL_TREATMENT_ETCHED" ? "usd_etched" : "usd";
+    const v = p[key];
+    if (!v) return null;
+    const n = parseFloat(v);
+    return isNaN(n) ? null : n;
+  } catch {
+    return null;
+  }
+}
+
+function fmt(n: number): string {
+  return "$" + n.toFixed(2);
+}
+
 function CardItemList({ items, isOwner, onRemove, onQuantityChange }: { items: CardItem[] } & RowProps) {
+  let collectionTotal = 0;
+  let hasAnyPrice = false;
+
+  for (const item of items) {
+    const p = unitPrice(item);
+    if (p !== null) { collectionTotal += p * item.quantity; hasAnyPrice = true; }
+  }
+
   return (
-    <div className="item-list">
-      {items.map((item) => (
-        <div key={item.id} className="item-row">
-          {item.imageUri && (
-            <img src={item.imageUri} alt={item.cardName} className="card-thumb" />
-          )}
-          <div className="item-info">
-            <span className="item-name">{item.cardName}</span>
-            <span className="item-meta">
-              {item.setCode.toUpperCase()} #{item.collectorNumber} &middot; {FOIL_TREATMENT_LABELS[item.foilTreatment]}
-            </span>
-            {item.notes && <span className="item-notes">{item.notes}</span>}
-          </div>
-          <QuantityStepper id={item.id} quantity={item.quantity} isOwner={isOwner} onQuantityChange={onQuantityChange} />
-          {isOwner && <RemoveButton onRemove={() => onRemove(item.id)} />}
+    <>
+      {hasAnyPrice && (
+        <div className="collection-total">
+          Collection value: <strong>{fmt(collectionTotal)}</strong>
         </div>
-      ))}
-    </div>
+      )}
+      <div className="item-list">
+        {items.map((item) => {
+          const unit = unitPrice(item);
+          const subtotal = unit !== null ? unit * item.quantity : null;
+          return (
+            <div key={item.id} className="item-row">
+              {item.imageUri && (
+                <img src={item.imageUri} alt={item.cardName} className="card-thumb" />
+              )}
+              <div className="item-info">
+                <span className="item-name">{item.cardName}</span>
+                <span className="item-meta">
+                  {item.setCode.toUpperCase()} #{item.collectorNumber} &middot; {FOIL_TREATMENT_LABELS[item.foilTreatment]}
+                </span>
+                {item.notes && <span className="item-notes">{item.notes}</span>}
+              </div>
+              {unit !== null && (
+                <div className="item-price">
+                  <span className="price-unit">{fmt(unit)}</span>
+                  {item.quantity > 1 && subtotal !== null && (
+                    <span className="price-subtotal">{fmt(subtotal)}</span>
+                  )}
+                </div>
+              )}
+              <QuantityStepper id={item.id} quantity={item.quantity} isOwner={isOwner} onQuantityChange={onQuantityChange} />
+              {isOwner && <RemoveButton onRemove={() => onRemove(item.id)} />}
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 

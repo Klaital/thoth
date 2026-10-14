@@ -51,6 +51,7 @@ type CardItem struct {
 	SetCode         string
 	CollectorNumber string
 	ImageURI        string
+	PricesJSON      string
 }
 
 type SealedItem struct {

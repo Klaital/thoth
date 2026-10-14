@@ -325,6 +325,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .type-option:hover { border-color: var(--accent); color: var(--text); }
 .type-option.selected { border-color: var(--accent); color: var(--text); background: rgba(108,138,255,.08); }
+.type-option.disabled, .type-option:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
 .checkbox-row {
   display: flex;
@@ -460,6 +461,30 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.collection-total {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.collection-total strong {
+  color: var(--text);
+}
+.item-price {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+  gap: 1px;
+}
+.price-unit {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.price-subtotal {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 .item-qty {
   font-size: 13px;

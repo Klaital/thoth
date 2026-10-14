@@ -13,13 +13,21 @@ interface ScryfallCard {
   setCode: string;
   collectorNumber: string;
   imageUri: string;
+  foil: boolean;
+  nonfoil: boolean;
 }
 
 const FOIL_OPTIONS = [
-  { value: "FOIL_TREATMENT_NONFOIL", label: "Non-foil" },
-  { value: "FOIL_TREATMENT_FOIL",    label: "Foil" },
-  { value: "FOIL_TREATMENT_ETCHED",  label: "Etched" },
+  { value: "FOIL_TREATMENT_NONFOIL", label: "Non-foil", available: (c: ScryfallCard) => c.nonfoil },
+  { value: "FOIL_TREATMENT_FOIL",    label: "Foil",     available: (c: ScryfallCard) => c.foil },
+  { value: "FOIL_TREATMENT_ETCHED",  label: "Etched",   available: (c: ScryfallCard) => c.foil },
 ];
+
+function defaultFoilTreatment(card: ScryfallCard): string {
+  if (card.nonfoil) return "FOIL_TREATMENT_NONFOIL";
+  if (card.foil)    return "FOIL_TREATMENT_FOIL";
+  return "";
+}
 
 export default function AddCardItemForm({ collectionId, onDone, onItemAdded }: Props) {
   const [query, setQuery] = useState("");
@@ -132,7 +140,7 @@ export default function AddCardItemForm({ collectionId, onDone, onItemAdded }: P
                   key={card.id}
                   type="button"
                   className="type-option"
-                  onClick={() => { setSelected(card); setLastAdded(null); }}
+                  onClick={() => { setSelected(card); setFoil(defaultFoilTreatment(card)); setLastAdded(null); }}
                   style={{ display: "flex", alignItems: "center", gap: 12 }}
                 >
                   {card.imageUri && (
@@ -171,19 +179,29 @@ export default function AddCardItemForm({ collectionId, onDone, onItemAdded }: P
 
           <div className="field">
             <label>Foil treatment</label>
-            <div style={{ display: "flex", gap: 8 }}>
-              {FOIL_OPTIONS.map((o) => (
-                <button
-                  key={o.value}
-                  type="button"
-                  className={`type-option${foil === o.value ? " selected" : ""}`}
-                  onClick={() => setFoil(o.value)}
-                  style={{ flex: 1 }}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
+            {selected && !selected.foil && !selected.nonfoil ? (
+              <p className="error-msg" role="alert">
+                This card has no valid foil/nonfoil configuration in Scryfall data.
+              </p>
+            ) : (
+              <div style={{ display: "flex", gap: 8 }}>
+                {FOIL_OPTIONS.map((o) => {
+                  const enabled = selected ? o.available(selected) : true;
+                  return (
+                    <button
+                      key={o.value}
+                      type="button"
+                      className={`type-option${foil === o.value ? " selected" : ""}${!enabled ? " disabled" : ""}`}
+                      onClick={() => enabled && setFoil(o.value)}
+                      disabled={!enabled}
+                      style={{ flex: 1 }}
+                    >
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="field">
@@ -204,7 +222,7 @@ export default function AddCardItemForm({ collectionId, onDone, onItemAdded }: P
 
           {error && <p className="error-msg" role="alert">{error}</p>}
 
-          <button type="submit" className="btn-primary" disabled={submitting}>
+          <button type="submit" className="btn-primary" disabled={submitting || !foil || (!!selected && !selected.foil && !selected.nonfoil)}>
             {submitting ? "Adding…" : "Add to collection"}
           </button>
         </>

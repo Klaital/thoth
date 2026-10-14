@@ -1,0 +1,3 @@
+ALTER TABLE scryfall_cards
+  ADD COLUMN foil    TINYINT(1) NOT NULL DEFAULT 0 AFTER image_uri,
+  ADD COLUMN nonfoil TINYINT(1) NOT NULL DEFAULT 0 AFTER foil;
