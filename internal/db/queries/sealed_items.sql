@@ -2,14 +2,14 @@
 SELECT * FROM sealed_items WHERE id = ? LIMIT 1;
 
 -- name: ListSealedItemsByCollection :many
-SELECT * FROM sealed_items WHERE collection_id = ? ORDER BY set_code;
+SELECT * FROM sealed_items WHERE collection_id = ? ORDER BY item_type, set_code;
 
 -- name: CreateSealedItem :execresult
-INSERT INTO sealed_items (collection_id, set_code, description, quantity, notes)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO sealed_items (collection_id, item_type, set_code, name, quantity, notes)
+VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: UpdateSealedItem :exec
-UPDATE sealed_items SET description = ?, quantity = ?, notes = ?
+UPDATE sealed_items SET item_type = ?, set_code = ?, name = ?, quantity = ?, notes = ?
 WHERE id = ?;
 
 -- name: DeleteSealedItem :exec

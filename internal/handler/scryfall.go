@@ -20,6 +20,14 @@ func NewScryfallHandler(queries *db.Queries) *ScryfallHandler {
 	return &ScryfallHandler{queries: queries}
 }
 
+func (h *ScryfallHandler) ListSetCodes(ctx context.Context, _ *thothv1.ListSetCodesRequest) (*thothv1.ListSetCodesResponse, error) {
+	setCodes, err := h.queries.ListScryfallSetCodes(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to list set codes")
+	}
+	return &thothv1.ListSetCodesResponse{SetCodes: setCodes}, nil
+}
+
 func (h *ScryfallHandler) SearchCards(ctx context.Context, req *thothv1.SearchCardsRequest) (*thothv1.SearchCardsResponse, error) {
 	if req.Query == "" {
 		return &thothv1.SearchCardsResponse{}, nil

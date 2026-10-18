@@ -14,6 +14,9 @@ LIMIT 20;
 -- name: GetScryfallCardByID :one
 SELECT * FROM scryfall_cards WHERE id = ? LIMIT 1;
 
+-- name: ListScryfallSetCodes :many
+SELECT DISTINCT set_code FROM scryfall_cards ORDER BY set_code;
+
 -- name: UpsertScryfallCard :exec
 INSERT INTO scryfall_cards (id, name, set_code, collector_number, image_uri, foil, nonfoil, prices_json, synced_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())

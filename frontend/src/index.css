@@ -60,6 +60,29 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
 
+.btn-secondary {
+  padding: 10px 16px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.form-actions .btn-primary {
+  width: auto;
+  flex: 1;
+}
+.added-confirmation {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .btn-google {
   width: 100%;
   padding: 10px;

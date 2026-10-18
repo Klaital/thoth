@@ -54,11 +54,32 @@ type CardItem struct {
 	PricesJSON      string
 }
 
+type SealedItemType string
+
+const (
+	SealedItemTypeSecretLair            SealedItemType = "secret_lair"
+	SealedItemTypePlayBooster           SealedItemType = "play_booster"
+	SealedItemTypePlayBoosterBox        SealedItemType = "play_booster_box"
+	SealedItemTypeCollectorBooster      SealedItemType = "collector_booster"
+	SealedItemTypeCollectorBoosterBox   SealedItemType = "collector_booster_box"
+	SealedItemTypeBundle                SealedItemType = "bundle"
+	SealedItemTypeDraftNight            SealedItemType = "draft_night"
+	SealedItemTypeDraftBooster          SealedItemType = "draft_booster"
+	SealedItemTypeDraftBoosterBox       SealedItemType = "draft_booster_box"
+	SealedItemTypeSetBooster            SealedItemType = "set_booster"
+	SealedItemTypeSetBoosterBox         SealedItemType = "set_booster_box"
+	SealedItemTypeJumpstartBooster      SealedItemType = "jumpstart_booster"
+	SealedItemTypeJumpstartBoosterBox   SealedItemType = "jumpstart_booster_box"
+	SealedItemTypeCommanderPrecon       SealedItemType = "commander_precon"
+	SealedItemTypePrereleasePack        SealedItemType = "prerelease_pack"
+)
+
 type SealedItem struct {
 	ID           int64
 	CollectionID int64
-	SetCode      string
-	Description  string
+	ItemType     SealedItemType
+	SetCode      *string
+	Name         *string
 	Quantity     int32
 	Notes        string
 }

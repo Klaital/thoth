@@ -45,7 +45,8 @@ function itemLabel(item: AnyItem, type: Collection["type"]): string {
   }
   if (type === "COLLECTION_TYPE_MTG_SEALED") {
     const s = item as SealedItem;
-    return s.description ? `${s.setCode.toUpperCase()} — ${s.description}` : s.setCode.toUpperCase();
+    const base = s.name || (s.setCode ? s.setCode.toUpperCase() : "");
+    return base || "Sealed item";
   }
   return (item as BookDvdItem).title;
 }

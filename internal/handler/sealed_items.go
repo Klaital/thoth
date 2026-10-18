@@ -26,8 +26,8 @@ func (h *SealedItemHandler) AddSealedItem(ctx context.Context, req *thothv1.AddS
 	if _, err := requireCollectionOwner(ctx, h.queries, uint64(req.CollectionId)); err != nil {
 		return nil, err
 	}
-	if req.SetCode == "" {
-		return nil, status.Error(codes.InvalidArgument, "set_code is required")
+	if req.ItemType == thothv1.SealedItemType_SEALED_ITEM_TYPE_UNSPECIFIED {
+		return nil, status.Error(codes.InvalidArgument, "item_type is required")
 	}
 	if req.Quantity <= 0 {
 		req.Quantity = 1
@@ -35,8 +35,9 @@ func (h *SealedItemHandler) AddSealedItem(ctx context.Context, req *thothv1.AddS
 
 	result, err := h.queries.CreateSealedItem(ctx, db.CreateSealedItemParams{
 		CollectionID: uint64(req.CollectionId),
-		SetCode:      req.SetCode,
-		Description:  nullString(req.Description),
+		ItemType:     db.SealedItemsItemType(model.SealedItemTypeFromProto(req.ItemType)),
+		SetCode:      optNullString(req.SetCode),
+		Name:         optNullString(req.Name),
 		Quantity:     req.Quantity,
 		Notes:        nullString(req.Notes),
 	})
@@ -77,10 +78,12 @@ func (h *SealedItemHandler) UpdateSealedItem(ctx context.Context, req *thothv1.U
 	}
 
 	if err := h.queries.UpdateSealedItem(ctx, db.UpdateSealedItemParams{
-		Description: nullString(req.Description),
-		Quantity:    req.Quantity,
-		Notes:       nullString(req.Notes),
-		ID:          uint64(req.Id),
+		ItemType: db.SealedItemsItemType(model.SealedItemTypeFromProto(req.ItemType)),
+		SetCode:  optNullString(req.SetCode),
+		Name:     optNullString(req.Name),
+		Quantity: req.Quantity,
+		Notes:    nullString(req.Notes),
+		ID:       uint64(req.Id),
 	}); err != nil {
 		return nil, status.Error(codes.Internal, "failed to update sealed item")
 	}

@@ -27,10 +27,22 @@ message SearchCardsResponse {
   repeated ScryfallCard cards = 1;
 }
 
+message ListSetCodesRequest {}
+
+message ListSetCodesResponse {
+  repeated string set_codes = 1;
+}
+
 service ScryfallService {
   rpc SearchCards(SearchCardsRequest) returns (SearchCardsResponse) {
     option (google.api.http) = {
       get: "/v1/scryfall/search"
+    };
+  }
+
+  rpc ListSetCodes(ListSetCodesRequest) returns (ListSetCodesResponse) {
+    option (google.api.http) = {
+      get: "/v1/scryfall/set-codes"
     };
   }
 }

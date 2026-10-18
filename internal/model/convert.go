@@ -152,11 +152,20 @@ func FoilTreatmentFromProto(f thothv1.FoilTreatment) FoilTreatment {
 }
 
 func SealedItemFromDB(r db.SealedItem) SealedItem {
+	var setCode *string
+	if r.SetCode.Valid {
+		setCode = &r.SetCode.String
+	}
+	var name *string
+	if r.Name.Valid {
+		name = &r.Name.String
+	}
 	return SealedItem{
 		ID:           int64(r.ID),
 		CollectionID: int64(r.CollectionID),
-		SetCode:      r.SetCode,
-		Description:  r.Description.String,
+		ItemType:     SealedItemType(r.ItemType),
+		SetCode:      setCode,
+		Name:         name,
 		Quantity:     r.Quantity,
 		Notes:        r.Notes.String,
 	}
@@ -166,10 +175,85 @@ func SealedItemToProto(s SealedItem) *thothv1.SealedItem {
 	return &thothv1.SealedItem{
 		Id:           s.ID,
 		CollectionId: s.CollectionID,
+		ItemType:     sealedItemTypeToProto(s.ItemType),
 		SetCode:      s.SetCode,
-		Description:  s.Description,
+		Name:         s.Name,
 		Quantity:     s.Quantity,
 		Notes:        s.Notes,
+	}
+}
+
+func sealedItemTypeToProto(t SealedItemType) thothv1.SealedItemType {
+	switch t {
+	case SealedItemTypeSecretLair:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_SECRET_LAIR
+	case SealedItemTypePlayBooster:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_PLAY_BOOSTER
+	case SealedItemTypePlayBoosterBox:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_PLAY_BOOSTER_BOX
+	case SealedItemTypeCollectorBooster:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_COLLECTOR_BOOSTER
+	case SealedItemTypeCollectorBoosterBox:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_COLLECTOR_BOOSTER_BOX
+	case SealedItemTypeBundle:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_BUNDLE
+	case SealedItemTypeDraftNight:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_DRAFT_NIGHT
+	case SealedItemTypeDraftBooster:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_DRAFT_BOOSTER
+	case SealedItemTypeDraftBoosterBox:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_DRAFT_BOOSTER_BOX
+	case SealedItemTypeSetBooster:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_SET_BOOSTER
+	case SealedItemTypeSetBoosterBox:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_SET_BOOSTER_BOX
+	case SealedItemTypeJumpstartBooster:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_JUMPSTART_BOOSTER
+	case SealedItemTypeJumpstartBoosterBox:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_JUMPSTART_BOOSTER_BOX
+	case SealedItemTypeCommanderPrecon:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_COMMANDER_PRECON
+	case SealedItemTypePrereleasePack:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_PRERELEASE_PACK
+	default:
+		return thothv1.SealedItemType_SEALED_ITEM_TYPE_UNSPECIFIED
+	}
+}
+
+func SealedItemTypeFromProto(t thothv1.SealedItemType) SealedItemType {
+	switch t {
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_SECRET_LAIR:
+		return SealedItemTypeSecretLair
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_PLAY_BOOSTER:
+		return SealedItemTypePlayBooster
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_PLAY_BOOSTER_BOX:
+		return SealedItemTypePlayBoosterBox
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_COLLECTOR_BOOSTER:
+		return SealedItemTypeCollectorBooster
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_COLLECTOR_BOOSTER_BOX:
+		return SealedItemTypeCollectorBoosterBox
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_BUNDLE:
+		return SealedItemTypeBundle
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_DRAFT_NIGHT:
+		return SealedItemTypeDraftNight
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_DRAFT_BOOSTER:
+		return SealedItemTypeDraftBooster
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_DRAFT_BOOSTER_BOX:
+		return SealedItemTypeDraftBoosterBox
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_SET_BOOSTER:
+		return SealedItemTypeSetBooster
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_SET_BOOSTER_BOX:
+		return SealedItemTypeSetBoosterBox
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_JUMPSTART_BOOSTER:
+		return SealedItemTypeJumpstartBooster
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_JUMPSTART_BOOSTER_BOX:
+		return SealedItemTypeJumpstartBoosterBox
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_COMMANDER_PRECON:
+		return SealedItemTypeCommanderPrecon
+	case thothv1.SealedItemType_SEALED_ITEM_TYPE_PRERELEASE_PACK:
+		return SealedItemTypePrereleasePack
+	default:
+		return SealedItemTypePlayBoosterBox
 	}
 }
 

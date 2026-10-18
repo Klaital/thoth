@@ -9,6 +9,7 @@ import {
   SealedItem,
   BookDvdItem,
   FOIL_TREATMENT_LABELS,
+  SEALED_ITEM_TYPE_LABELS,
 } from "../api/types";
 import AppLayout from "../components/AppLayout";
 import { useAuth } from "../context/AuthContext";
@@ -301,17 +302,24 @@ function CardItemList({ items, isOwner, onRemove, onQuantityChange }: { items: C
 function SealedItemList({ items, isOwner, onRemove, onQuantityChange }: { items: SealedItem[] } & RowProps) {
   return (
     <div className="item-list">
-      {items.map((item) => (
-        <div key={item.id} className="item-row">
-          <div className="item-info">
-            <span className="item-name">{item.setCode.toUpperCase()}</span>
-            {item.description && <span className="item-meta">{item.description}</span>}
-            {item.notes && <span className="item-notes">{item.notes}</span>}
+      {items.map((item) => {
+        const typeLabel = SEALED_ITEM_TYPE_LABELS[item.itemType] ?? item.itemType;
+        const displayName = item.name || (item.setCode ? item.setCode.toUpperCase() : null);
+        return (
+          <div key={item.id} className="item-row">
+            <div className="item-info">
+              <span className="item-name">{displayName ?? typeLabel}</span>
+              <span className="item-meta">
+                {typeLabel}
+                {item.setCode && displayName !== item.setCode.toUpperCase() && ` · ${item.setCode.toUpperCase()}`}
+              </span>
+              {item.notes && <span className="item-notes">{item.notes}</span>}
+            </div>
+            <QuantityStepper id={item.id} quantity={item.quantity} isOwner={isOwner} onQuantityChange={onQuantityChange} />
+            {isOwner && <RemoveButton onRemove={() => onRemove(item.id)} />}
           </div>
-          <QuantityStepper id={item.id} quantity={item.quantity} isOwner={isOwner} onQuantityChange={onQuantityChange} />
-          {isOwner && <RemoveButton onRemove={() => onRemove(item.id)} />}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -391,7 +399,7 @@ function buildUpdateBody(
   }
   if (type === "COLLECTION_TYPE_MTG_SEALED") {
     const item = (items as SealedItem[]).find((i) => i.id === itemId)!;
-    return { description: item.description, quantity: newQty, notes: item.notes };
+    return { itemType: item.itemType, setCode: item.setCode, name: item.name, quantity: newQty, notes: item.notes };
   }
   const item = (items as BookDvdItem[]).find((i) => i.id === itemId)!;
   return { title: item.title, quantity: newQty, notes: item.notes };

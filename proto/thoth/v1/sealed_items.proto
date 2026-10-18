@@ -6,21 +6,42 @@ import "google/api/annotations.proto";
 
 option go_package = "github.com/klaital/thoth/internal/gen/thoth/v1;thothv1";
 
+enum SealedItemType {
+  SEALED_ITEM_TYPE_UNSPECIFIED           = 0;
+  SEALED_ITEM_TYPE_SECRET_LAIR           = 1;
+  SEALED_ITEM_TYPE_PLAY_BOOSTER          = 2;
+  SEALED_ITEM_TYPE_PLAY_BOOSTER_BOX      = 3;
+  SEALED_ITEM_TYPE_COLLECTOR_BOOSTER     = 4;
+  SEALED_ITEM_TYPE_COLLECTOR_BOOSTER_BOX = 5;
+  SEALED_ITEM_TYPE_BUNDLE                = 6;
+  SEALED_ITEM_TYPE_DRAFT_NIGHT           = 7;
+  SEALED_ITEM_TYPE_DRAFT_BOOSTER         = 8;
+  SEALED_ITEM_TYPE_DRAFT_BOOSTER_BOX     = 9;
+  SEALED_ITEM_TYPE_SET_BOOSTER           = 10;
+  SEALED_ITEM_TYPE_SET_BOOSTER_BOX       = 11;
+  SEALED_ITEM_TYPE_JUMPSTART_BOOSTER     = 12;
+  SEALED_ITEM_TYPE_JUMPSTART_BOOSTER_BOX = 13;
+  SEALED_ITEM_TYPE_COMMANDER_PRECON      = 14;
+  SEALED_ITEM_TYPE_PRERELEASE_PACK       = 15;
+}
+
 message SealedItem {
   int64 id = 1;
   int64 collection_id = 2;
-  string set_code = 3;
-  string description = 4;
-  int32 quantity = 5;
-  string notes = 6;
+  SealedItemType item_type = 3;
+  optional string set_code = 4;
+  optional string name = 5;
+  int32 quantity = 6;
+  string notes = 7;
 }
 
 message AddSealedItemRequest {
   int64 collection_id = 1;
-  string set_code = 2;
-  string description = 3;
-  int32 quantity = 4;
-  string notes = 5;
+  SealedItemType item_type = 2;
+  optional string set_code = 3;
+  optional string name = 4;
+  int32 quantity = 5;
+  string notes = 6;
 }
 
 message AddSealedItemResponse {
@@ -37,9 +58,11 @@ message ListSealedItemsResponse {
 
 message UpdateSealedItemRequest {
   int64 id = 1;
-  string description = 2;
-  int32 quantity = 3;
-  string notes = 4;
+  SealedItemType item_type = 2;
+  optional string set_code = 3;
+  optional string name = 4;
+  int32 quantity = 5;
+  string notes = 6;
 }
 
 message UpdateSealedItemResponse {
