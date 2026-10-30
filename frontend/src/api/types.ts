@@ -9,11 +9,32 @@ export const FOIL_TREATMENT_LABELS: Record<FoilTreatment, string> = {
   FOIL_TREATMENT_ETCHED:  "Etched",
 };
 
+export type CardCategory =
+  | "CARD_CATEGORY_NONE"
+  | "CARD_CATEGORY_COMMANDER"
+  | "CARD_CATEGORY_DECK"
+  | "CARD_CATEGORY_SIDEBOARD";
+
+export const CARD_CATEGORY_LABELS: Record<CardCategory, string> = {
+  CARD_CATEGORY_NONE:      "None",
+  CARD_CATEGORY_COMMANDER: "Commander",
+  CARD_CATEGORY_DECK:      "Deck",
+  CARD_CATEGORY_SIDEBOARD: "Sideboard",
+};
+
+export const CARD_CATEGORY_OPTIONS: CardCategory[] = [
+  "CARD_CATEGORY_NONE",
+  "CARD_CATEGORY_COMMANDER",
+  "CARD_CATEGORY_DECK",
+  "CARD_CATEGORY_SIDEBOARD",
+];
+
 export interface CardItem {
   id: string;
   collectionId: string;
   scryfallCardId: string;
   foilTreatment: FoilTreatment;
+  category: CardCategory;
   quantity: number;
   notes: string;
   cardName: string;
@@ -88,10 +109,12 @@ export interface SealedItem {
   notes: string;
 }
 
-export interface BulkImportLineResult {
+export interface BulkImportLineResult<T> {
   lineNumber: number;
   line: string;
-  item?: SealedItem;
+  item?: T;
+  // Card imports only: the name parsed from the line.
+  name?: string;
   warning?: string;
   error?: string;
 }
@@ -119,6 +142,11 @@ export type CollectionType =
   | "COLLECTION_TYPE_DVDS"
   | "COLLECTION_TYPE_UNSPECIFIED";
 
+export interface CollectionCommander {
+  cardName: string;
+  imageUri: string;
+}
+
 export interface Collection {
   id: string;
   ownerId: string;
@@ -126,6 +154,7 @@ export interface Collection {
   description: string;
   type: CollectionType;
   isPublic: boolean;
+  commanders?: CollectionCommander[];
 }
 
 export const COLLECTION_TYPE_LABELS: Record<CollectionType, string> = {

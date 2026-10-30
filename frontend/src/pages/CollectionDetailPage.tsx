@@ -6,12 +6,16 @@ import {
   COLLECTION_TYPE_LABELS,
   collectionTypeBadgeClass,
   CardItem,
+  CardCategory,
+  CARD_CATEGORY_LABELS,
+  CARD_CATEGORY_OPTIONS,
   SealedItem,
   BookDvdItem,
   FOIL_TREATMENT_LABELS,
   SEALED_ITEM_TYPE_LABELS,
 } from "../api/types";
 import AppLayout from "../components/AppLayout";
+import CommanderSummary from "../components/CommanderSummary";
 import { useAuth } from "../context/AuthContext";
 
 export default function CollectionDetailPage() {
@@ -106,6 +110,26 @@ export default function CollectionDetailPage() {
     }
   }
 
+  async function handleCategoryChange(itemId: string, category: CardCategory) {
+    if (!collection || !items) return;
+    const item = (items as CardItem[]).find((i) => i.id === itemId);
+    if (!item) return;
+    const resp = await apiFetch(`/v1/cards/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ quantity: item.quantity, notes: item.notes, category }),
+    });
+    // Moving into a category that already holds this card merges the rows, so refetch.
+    if (resp.ok) await fetchItems(collection);
+  }
+
+  // Derived from the loaded cards (not collection.commanders) so it updates
+  // as soon as a card's category changes.
+  const commanders = isCardCollection(collection?.type)
+    ? ((items as CardItem[] | null) ?? [])
+        .filter((i) => i.category === "CARD_CATEGORY_COMMANDER")
+        .map((i) => ({ cardName: i.cardName, imageUri: i.imageUri }))
+    : [];
+
   const userId = token ? parseUserId(token) : null;
   const isOwner = collection && userId !== null && String(userId) === collection.ownerId;
 
@@ -126,6 +150,7 @@ export default function CollectionDetailPage() {
               </button>
             )}
           </div>
+          {commanders.length > 0 && <CommanderSummary commanders={commanders} size="large" />}
           {collection.description && <p className="desc">{collection.description}</p>}
           <div className="meta">
             <span className={collectionTypeBadgeClass(collection.type)}>
@@ -157,6 +182,7 @@ export default function CollectionDetailPage() {
             isOwner={!!isOwner}
             onRemove={handleRemoveItem}
             onQuantityChange={handleQuantityChange}
+            onCategoryChange={handleCategoryChange}
           />
         )}
       </div>
@@ -170,12 +196,21 @@ interface ItemListProps {
   isOwner: boolean;
   onRemove: (id: string) => void;
   onQuantityChange: (id: string, delta: 1 | -1) => void;
+  onCategoryChange: (id: string, category: CardCategory) => void;
 }
 
-function ItemList({ collection, items, isOwner, onRemove, onQuantityChange }: ItemListProps) {
+function ItemList({ collection, items, isOwner, onRemove, onQuantityChange, onCategoryChange }: ItemListProps) {
   const type = collection.type;
   if (type === "COLLECTION_TYPE_MTG_CARDS" || type === "COLLECTION_TYPE_MTG_DECK") {
-    return <CardItemList items={items as CardItem[]} isOwner={isOwner} onRemove={onRemove} onQuantityChange={onQuantityChange} />;
+    return (
+      <CardItemList
+        items={items as CardItem[]}
+        isOwner={isOwner}
+        onRemove={onRemove}
+        onQuantityChange={onQuantityChange}
+        onCategoryChange={onCategoryChange}
+      />
+    );
   }
   if (type === "COLLECTION_TYPE_MTG_SEALED") {
     return <SealedItemList items={items as SealedItem[]} isOwner={isOwner} onRemove={onRemove} onQuantityChange={onQuantityChange} />;
@@ -249,7 +284,17 @@ function fmt(n: number): string {
   return "$" + n.toFixed(2);
 }
 
-function CardItemList({ items, isOwner, onRemove, onQuantityChange }: { items: CardItem[] } & RowProps) {
+// Display order for category groups; uncategorized cards go last.
+const CARD_CATEGORY_GROUP_ORDER: CardCategory[] = [
+  "CARD_CATEGORY_COMMANDER",
+  "CARD_CATEGORY_DECK",
+  "CARD_CATEGORY_SIDEBOARD",
+  "CARD_CATEGORY_NONE",
+];
+
+type CardRowProps = RowProps & { onCategoryChange: (id: string, category: CardCategory) => void };
+
+function CardItemList({ items, ...rowProps }: { items: CardItem[] } & CardRowProps) {
   let collectionTotal = 0;
   let hasAnyPrice = false;
 
@@ -258,6 +303,9 @@ function CardItemList({ items, isOwner, onRemove, onQuantityChange }: { items: C
     if (p !== null) { collectionTotal += p * item.quantity; hasAnyPrice = true; }
   }
 
+  // Only group when something is categorized, so plain collections stay a flat list.
+  const categorized = items.some((i) => (i.category ?? "CARD_CATEGORY_NONE") !== "CARD_CATEGORY_NONE");
+
   return (
     <>
       {hasAnyPrice && (
@@ -265,37 +313,69 @@ function CardItemList({ items, isOwner, onRemove, onQuantityChange }: { items: C
           Collection value: <strong>{fmt(collectionTotal)}</strong>
         </div>
       )}
-      <div className="item-list">
-        {items.map((item) => {
-          const unit = unitPrice(item);
-          const subtotal = unit !== null ? unit * item.quantity : null;
+      {categorized ? (
+        CARD_CATEGORY_GROUP_ORDER.map((category) => {
+          const group = items.filter((i) => (i.category ?? "CARD_CATEGORY_NONE") === category);
+          if (group.length === 0) return null;
+          const count = group.reduce((n, i) => n + i.quantity, 0);
           return (
-            <div key={item.id} className="item-row">
-              {item.imageUri && (
-                <img src={item.imageUri} alt={item.cardName} className="card-thumb" />
-              )}
-              <div className="item-info">
-                <span className="item-name">{item.cardName}</span>
-                <span className="item-meta">
-                  {item.setCode.toUpperCase()} #{item.collectorNumber} &middot; {FOIL_TREATMENT_LABELS[item.foilTreatment]}
-                </span>
-                {item.notes && <span className="item-notes">{item.notes}</span>}
-              </div>
-              {unit !== null && (
-                <div className="item-price">
-                  <span className="price-unit">{fmt(unit)}</span>
-                  {item.quantity > 1 && subtotal !== null && (
-                    <span className="price-subtotal">{fmt(subtotal)}</span>
-                  )}
-                </div>
-              )}
-              <QuantityStepper id={item.id} quantity={item.quantity} isOwner={isOwner} onQuantityChange={onQuantityChange} />
-              {isOwner && <RemoveButton onRemove={() => onRemove(item.id)} />}
-            </div>
+            <section key={category} className="card-category-group">
+              <h3>{CARD_CATEGORY_LABELS[category]} ({count})</h3>
+              <CardRows items={group} {...rowProps} />
+            </section>
           );
-        })}
-      </div>
+        })
+      ) : (
+        <CardRows items={items} {...rowProps} />
+      )}
     </>
+  );
+}
+
+function CardRows({ items, isOwner, onRemove, onQuantityChange, onCategoryChange }: { items: CardItem[] } & CardRowProps) {
+  return (
+    <div className="item-list">
+      {items.map((item) => {
+        const unit = unitPrice(item);
+        const subtotal = unit !== null ? unit * item.quantity : null;
+        return (
+          <div key={item.id} className="item-row">
+            {item.imageUri && (
+              <img src={item.imageUri} alt={item.cardName} className="card-thumb" />
+            )}
+            <div className="item-info">
+              <span className="item-name">{item.cardName}</span>
+              <span className="item-meta">
+                {item.setCode.toUpperCase()} #{item.collectorNumber} &middot; {FOIL_TREATMENT_LABELS[item.foilTreatment]}
+              </span>
+              {item.notes && <span className="item-notes">{item.notes}</span>}
+            </div>
+            {unit !== null && (
+              <div className="item-price">
+                <span className="price-unit">{fmt(unit)}</span>
+                {item.quantity > 1 && subtotal !== null && (
+                  <span className="price-subtotal">{fmt(subtotal)}</span>
+                )}
+              </div>
+            )}
+            {isOwner && (
+              <select
+                className="category-select"
+                value={item.category ?? "CARD_CATEGORY_NONE"}
+                onChange={(e) => onCategoryChange(item.id, e.target.value as CardCategory)}
+                aria-label={`Category for ${item.cardName}`}
+              >
+                {CARD_CATEGORY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>{CARD_CATEGORY_LABELS[c]}</option>
+                ))}
+              </select>
+            )}
+            <QuantityStepper id={item.id} quantity={item.quantity} isOwner={isOwner} onQuantityChange={onQuantityChange} />
+            {isOwner && <RemoveButton onRemove={() => onRemove(item.id)} />}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -340,6 +420,10 @@ function BookDvdItemList({ items, isOwner, onRemove, onQuantityChange }: { items
       ))}
     </div>
   );
+}
+
+function isCardCollection(type: Collection["type"] | undefined): boolean {
+  return type === "COLLECTION_TYPE_MTG_CARDS" || type === "COLLECTION_TYPE_MTG_DECK";
 }
 
 function itemsEndpoint(type: Collection["type"], id: string): string | null {

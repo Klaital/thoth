@@ -103,6 +103,7 @@ func CardItemFromDB(r db.ListCardItemsByCollectionRow) CardItem {
 		CollectionID:    int64(r.CollectionID),
 		ScryfallCardID:  r.ScryfallCardID,
 		FoilTreatment:   FoilTreatment(r.FoilTreatment),
+		Category:        CardCategory(r.Category),
 		Quantity:        r.Quantity,
 		Notes:           r.Notes.String,
 		CardName:        r.CardName,
@@ -119,6 +120,7 @@ func CardItemToProto(c CardItem) *thothv1.CardItem {
 		CollectionId:    c.CollectionID,
 		ScryfallCardId:  c.ScryfallCardID,
 		FoilTreatment:   foilTreatmentToProto(c.FoilTreatment),
+		Category:        cardCategoryToProto(c.Category),
 		Quantity:        c.Quantity,
 		Notes:           c.Notes,
 		CardName:        c.CardName,
@@ -148,6 +150,32 @@ func FoilTreatmentFromProto(f thothv1.FoilTreatment) FoilTreatment {
 		return FoilTreatmentEtched
 	default:
 		return FoilTreatmentNonfoil
+	}
+}
+
+func cardCategoryToProto(c CardCategory) thothv1.CardCategory {
+	switch c {
+	case CardCategoryCommander:
+		return thothv1.CardCategory_CARD_CATEGORY_COMMANDER
+	case CardCategoryDeck:
+		return thothv1.CardCategory_CARD_CATEGORY_DECK
+	case CardCategorySideboard:
+		return thothv1.CardCategory_CARD_CATEGORY_SIDEBOARD
+	default:
+		return thothv1.CardCategory_CARD_CATEGORY_NONE
+	}
+}
+
+func CardCategoryFromProto(c thothv1.CardCategory) CardCategory {
+	switch c {
+	case thothv1.CardCategory_CARD_CATEGORY_COMMANDER:
+		return CardCategoryCommander
+	case thothv1.CardCategory_CARD_CATEGORY_DECK:
+		return CardCategoryDeck
+	case thothv1.CardCategory_CARD_CATEGORY_SIDEBOARD:
+		return CardCategorySideboard
+	default:
+		return CardCategoryNone
 	}
 }
 

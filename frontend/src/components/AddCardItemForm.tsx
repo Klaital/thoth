@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { apiFetch } from "../api/auth";
+import { CardCategory, CARD_CATEGORY_LABELS, CARD_CATEGORY_OPTIONS } from "../api/types";
 
 interface Props {
   collectionId: number;
@@ -36,6 +37,7 @@ export default function AddCardItemForm({ collectionId, onDone, onItemAdded }: P
   const [selected, setSelected] = useState<ScryfallCard | null>(null);
   const [foil, setFoil] = useState("FOIL_TREATMENT_NONFOIL");
   const [quantity, setQuantity] = useState(1);
+  const [category, setCategory] = useState<CardCategory>("CARD_CATEGORY_NONE");
   const [notes, setNotes] = useState("");
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +72,7 @@ export default function AddCardItemForm({ collectionId, onDone, onItemAdded }: P
           collectionId,
           scryfallCardId: selected.id,
           foilTreatment: foil,
+          category,
           quantity,
           notes,
         }),
@@ -78,7 +81,7 @@ export default function AddCardItemForm({ collectionId, onDone, onItemAdded }: P
         setError("Failed to add card.");
         return;
       }
-      // Stay on the page; reset to search but keep set code and show confirmation.
+      // Stay on the page; reset to search but keep set code and category, and show confirmation.
       const addedName = selected.name;
       setSelected(null);
       setResults([]);
@@ -202,6 +205,15 @@ export default function AddCardItemForm({ collectionId, onDone, onItemAdded }: P
                 })}
               </div>
             )}
+          </div>
+
+          <div className="field">
+            <label htmlFor="category">Category</label>
+            <select id="category" value={category} onChange={(e) => setCategory(e.target.value as CardCategory)}>
+              {CARD_CATEGORY_OPTIONS.map((c) => (
+                <option key={c} value={c}>{CARD_CATEGORY_LABELS[c]}</option>
+              ))}
+            </select>
           </div>
 
           <div className="field">

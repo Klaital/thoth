@@ -32,11 +32,14 @@ func (h *CardItemHandler) AddCardItem(ctx context.Context, req *thothv1.AddCardI
 	if req.Quantity <= 0 {
 		req.Quantity = 1
 	}
+	foil := model.FoilTreatmentFromProto(req.FoilTreatment)
+	category := model.CardCategoryFromProto(req.Category)
 
 	_, err := h.queries.UpsertCardItem(ctx, db.UpsertCardItemParams{
 		CollectionID:   uint64(req.CollectionId),
 		ScryfallCardID: req.ScryfallCardId,
-		FoilTreatment:  db.CardItemsFoilTreatment(model.FoilTreatmentFromProto(req.FoilTreatment)),
+		FoilTreatment:  db.CardItemsFoilTreatment(foil),
+		Category:       db.CardItemsCategory(category),
 		Quantity:       req.Quantity,
 		Notes:          nullString(req.Notes),
 	})
@@ -50,7 +53,7 @@ func (h *CardItemHandler) AddCardItem(ctx context.Context, req *thothv1.AddCardI
 		return nil, status.Error(codes.Internal, "failed to fetch card item")
 	}
 	for _, r := range rows {
-		if r.ScryfallCardID == req.ScryfallCardId && string(r.FoilTreatment) == string(model.FoilTreatmentFromProto(req.FoilTreatment)) {
+		if r.ScryfallCardID == req.ScryfallCardId && model.FoilTreatment(r.FoilTreatment) == foil && model.CardCategory(r.Category) == category {
 			return &thothv1.AddCardItemResponse{Item: model.CardItemToProto(model.CardItemFromDB(r))}, nil
 		}
 	}
@@ -81,12 +84,49 @@ func (h *CardItemHandler) UpdateCardItem(ctx context.Context, req *thothv1.Updat
 		return nil, err
 	}
 
-	if err := h.queries.UpdateCardItem(ctx, db.UpdateCardItemParams{
-		Quantity: req.Quantity,
-		Notes:    nullString(req.Notes),
-		ID:       uint64(req.Id),
-	}); err != nil {
-		return nil, status.Error(codes.Internal, "failed to update card item")
+	category := row.Category
+	if req.Category != nil {
+		category = db.CardItemsCategory(model.CardCategoryFromProto(*req.Category))
+	}
+	resultID := uint64(req.Id)
+
+	if category != row.Category {
+		// The unique key includes category, so moving into a category that
+		// already holds this card and foil merges into that row.
+		existing, err := h.queries.FindCardItem(ctx, db.FindCardItemParams{
+			CollectionID:   row.CollectionID,
+			ScryfallCardID: row.ScryfallCardID,
+			FoilTreatment:  row.FoilTreatment,
+			Category:       category,
+		})
+		switch {
+		case err == nil:
+			if err := h.queries.UpdateCardItem(ctx, db.UpdateCardItemParams{
+				Quantity: existing.Quantity + req.Quantity,
+				Notes:    existing.Notes,
+				Category: category,
+				ID:       existing.ID,
+			}); err != nil {
+				return nil, status.Error(codes.Internal, "failed to update card item")
+			}
+			if err := h.queries.DeleteCardItem(ctx, uint64(req.Id)); err != nil {
+				return nil, status.Error(codes.Internal, "failed to update card item")
+			}
+			resultID = existing.ID
+		case !errors.Is(err, sql.ErrNoRows):
+			return nil, status.Error(codes.Internal, "failed to update card item")
+		}
+	}
+
+	if resultID == uint64(req.Id) {
+		if err := h.queries.UpdateCardItem(ctx, db.UpdateCardItemParams{
+			Quantity: req.Quantity,
+			Notes:    nullString(req.Notes),
+			Category: category,
+			ID:       uint64(req.Id),
+		}); err != nil {
+			return nil, status.Error(codes.Internal, "failed to update card item")
+		}
 	}
 
 	rows, err := h.queries.ListCardItemsByCollection(ctx, row.CollectionID)
@@ -94,7 +134,7 @@ func (h *CardItemHandler) UpdateCardItem(ctx context.Context, req *thothv1.Updat
 		return nil, status.Error(codes.Internal, "failed to fetch updated item")
 	}
 	for _, r := range rows {
-		if r.ID == uint64(req.Id) {
+		if r.ID == resultID {
 			return &thothv1.UpdateCardItemResponse{Item: model.CardItemToProto(model.CardItemFromDB(r))}, nil
 		}
 	}

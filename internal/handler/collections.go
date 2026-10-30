@@ -74,9 +74,11 @@ func (h *CollectionHandler) GetCollection(ctx context.Context, req *thothv1.GetC
 		return nil, err
 	}
 
-	return &thothv1.GetCollectionResponse{
-		Collection: model.CollectionToProto(model.CollectionFromDB(c)),
-	}, nil
+	out := model.CollectionToProto(model.CollectionFromDB(c))
+	if err := h.attachCommanders(ctx, []*thothv1.Collection{out}); err != nil {
+		return nil, err
+	}
+	return &thothv1.GetCollectionResponse{Collection: out}, nil
 }
 
 func (h *CollectionHandler) ListCollections(ctx context.Context, req *thothv1.ListCollectionsRequest) (*thothv1.ListCollectionsResponse, error) {
@@ -110,7 +112,35 @@ func (h *CollectionHandler) ListCollections(ctx context.Context, req *thothv1.Li
 	for i, row := range rows {
 		out[i] = model.CollectionToProto(model.CollectionFromDB(row))
 	}
+	if err := h.attachCommanders(ctx, out); err != nil {
+		return nil, err
+	}
 	return &thothv1.ListCollectionsResponse{Collections: out}, nil
+}
+
+// attachCommanders fills in each collection's commander cards with one query.
+func (h *CollectionHandler) attachCommanders(ctx context.Context, collections []*thothv1.Collection) error {
+	if len(collections) == 0 {
+		return nil
+	}
+	byID := make(map[uint64]*thothv1.Collection, len(collections))
+	ids := make([]uint64, len(collections))
+	for i, c := range collections {
+		ids[i] = uint64(c.Id)
+		byID[ids[i]] = c
+	}
+	rows, err := h.queries.ListCommandersByCollections(ctx, ids)
+	if err != nil {
+		return status.Error(codes.Internal, "failed to fetch commanders")
+	}
+	for _, r := range rows {
+		c := byID[r.CollectionID]
+		c.Commanders = append(c.Commanders, &thothv1.CollectionCommander{
+			CardName: r.CardName,
+			ImageUri: r.ImageUri.String,
+		})
+	}
+	return nil
 }
 
 func (h *CollectionHandler) UpdateCollection(ctx context.Context, req *thothv1.UpdateCollectionRequest) (*thothv1.UpdateCollectionResponse, error) {

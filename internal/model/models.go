@@ -40,11 +40,21 @@ const (
 	FoilTreatmentEtched  FoilTreatment = "etched"
 )
 
+type CardCategory string
+
+const (
+	CardCategoryNone      CardCategory = "none"
+	CardCategoryCommander CardCategory = "commander"
+	CardCategoryDeck      CardCategory = "deck"
+	CardCategorySideboard CardCategory = "sideboard"
+)
+
 type CardItem struct {
 	ID              int64
 	CollectionID    int64
 	ScryfallCardID  string
 	FoilTreatment   FoilTreatment
+	Category        CardCategory
 	Quantity        int32
 	Notes           string
 	CardName        string

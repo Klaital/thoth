@@ -29,3 +29,7 @@ ON DUPLICATE KEY UPDATE
   nonfoil          = VALUES(nonfoil),
   prices_json      = VALUES(prices_json),
   synced_at        = VALUES(synced_at);
+
+-- name: GetScryfallCardBySetAndNumber :one
+SELECT * FROM scryfall_cards WHERE set_code = ? AND collector_number = ? LIMIT 1;
+

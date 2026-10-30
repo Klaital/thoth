@@ -327,6 +327,23 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .empty-state p  { font-size: 14px; margin: 0 0 24px; }
 
 /* ── Collection detail ── */
+.commander-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.commander-images {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.commander-images img { border-radius: 4px; display: block; }
+.commander-summary-small img { width: 44px; }
+.commander-summary-small .commander-names { font-size: 13px; color: var(--text-muted); }
+.commander-summary-large { margin: 4px 0 12px; gap: 14px; }
+.commander-summary-large img { width: 120px; border-radius: 6px; }
+.commander-summary-large .commander-names { font-size: 16px; font-weight: 600; }
+
 .detail-header {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -505,6 +522,24 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.card-category-group {
+  margin-bottom: 20px;
+}
+.card-category-group h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 8px;
+}
+.category-select {
+  width: auto;
+  flex-shrink: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
 .collection-total {
   font-size: 14px;
   color: var(--text-muted);

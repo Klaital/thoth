@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiFetch } from "../api/auth";
 import { Collection, COLLECTION_TYPE_LABELS, collectionTypeBadgeClass } from "../api/types";
 import AppLayout from "../components/AppLayout";
+import CommanderSummary from "../components/CommanderSummary";
 
 export default function CollectionsPage() {
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -40,6 +41,7 @@ export default function CollectionsPage() {
             {collections.map((c) => (
               <Link key={c.id} to={`/collections/${c.id}`} className="collection-card">
                 <h2>{c.name}</h2>
+                {c.commanders && c.commanders.length > 0 && <CommanderSummary commanders={c.commanders} />}
                 {c.description && <p className="card-desc">{c.description}</p>}
                 <div className="card-meta">
                   <span className={collectionTypeBadgeClass(c.type)}>

@@ -13,6 +13,14 @@ enum FoilTreatment {
   FOIL_TREATMENT_ETCHED = 3;
 }
 
+enum CardCategory {
+  CARD_CATEGORY_UNSPECIFIED = 0;
+  CARD_CATEGORY_NONE        = 1;
+  CARD_CATEGORY_COMMANDER   = 2;
+  CARD_CATEGORY_DECK        = 3;
+  CARD_CATEGORY_SIDEBOARD   = 4;
+}
+
 message CardItem {
   int64 id = 1;
   int64 collection_id = 2;
@@ -27,6 +35,7 @@ message CardItem {
   string collector_number = 10;
   // JSON-encoded price map from Scryfall (usd, usd_foil, usd_etched, etc.)
   string prices_json = 11;
+  CardCategory category = 12;
 }
 
 message AddCardItemRequest {
@@ -35,6 +44,8 @@ message AddCardItemRequest {
   FoilTreatment foil_treatment = 3;
   int32 quantity = 4;
   string notes = 5;
+  // Unspecified is stored as NONE.
+  CardCategory category = 6;
 }
 
 message AddCardItemResponse {
@@ -53,6 +64,9 @@ message UpdateCardItemRequest {
   int64 id = 1;
   int32 quantity = 2;
   string notes = 3;
+  // Left unchanged when omitted. Moving into a category that already holds the
+  // same card and foil treatment merges the two rows.
+  optional CardCategory category = 4;
 }
 
 message UpdateCardItemResponse {
@@ -65,10 +79,44 @@ message RemoveCardItemRequest {
 
 message RemoveCardItemResponse {}
 
+message BulkImportCardItemsRequest {
+  int64 collection_id = 1;
+  // Moxfield text format, one card per line: "4 Lightning Bolt (M20) 141 *F*".
+  string text = 2;
+  // Category for imported cards. Unspecified is stored as NONE. If the text
+  // has "Commander", "Deck" or "Sideboard" header lines, those set the
+  // category of the cards after them instead, and cards before the first
+  // header go in DECK.
+  CardCategory category = 3;
+}
+
+message BulkImportCardLineResult {
+  int32 line_number = 1;
+  string line = 2;
+  // Set when the line was added.
+  CardItem item = 3;
+  // Non-fatal issue, e.g. the name didn't match the printing found.
+  string warning = 4;
+  string error = 5;
+  // Card name parsed from the line; empty if the line couldn't be parsed.
+  string name = 6;
+}
+
+message BulkImportCardItemsResponse {
+  repeated BulkImportCardLineResult results = 1;
+}
+
 service CardItemService {
   rpc AddCardItem(AddCardItemRequest) returns (AddCardItemResponse) {
     option (google.api.http) = {
       post: "/v1/collections/{collection_id}/cards"
+      body: "*"
+    };
+  }
+
+  rpc BulkImportCardItems(BulkImportCardItemsRequest) returns (BulkImportCardItemsResponse) {
+    option (google.api.http) = {
+      post: "/v1/collections/{collection_id}/cards/bulk"
       body: "*"
     };
   }
