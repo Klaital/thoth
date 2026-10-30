@@ -120,6 +120,18 @@ export interface BulkImportLineResult<T> {
   error?: string;
 }
 
+// Progress of one line of a bulk import, as shown while it runs.
+export interface BulkImportEntry {
+  lineNumber: number;
+  line: string;
+  label: string;
+  quantity: number;
+  status: "pending" | "added" | "failed";
+  item?: unknown;
+  warning?: string;
+  error?: string;
+}
+
 export interface LookupUPCResponse {
   setName: string;
   setCode: string;

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -96,9 +97,10 @@ func (h *CardItemHandler) resolveCard(ctx context.Context, parsed bulkCardLine) 
 	return card, "", nil
 }
 
-func (h *CardItemHandler) BulkImportCardItems(ctx context.Context, req *thothv1.BulkImportCardItemsRequest) (*thothv1.BulkImportCardItemsResponse, error) {
+func (h *CardItemHandler) BulkImportCardItems(req *thothv1.BulkImportCardItemsRequest, stream grpc.ServerStreamingServer[thothv1.BulkImportCardLineResult]) error {
+	ctx := stream.Context()
 	if _, err := requireCollectionOwner(ctx, h.queries, uint64(req.CollectionId)); err != nil {
-		return nil, err
+		return err
 	}
 
 	lines := strings.Split(req.Text, "\n")
@@ -106,20 +108,25 @@ func (h *CardItemHandler) BulkImportCardItems(ctx context.Context, req *thothv1.
 	// Text with section headers is a deck list: cards before the first header
 	// are in the deck. Otherwise every card gets the requested category.
 	category := model.CardCategoryFromProto(req.Category)
+	hasHeaders := false
+	cardLines := 0
 	for _, line := range lines {
-		if _, ok := parseCategoryHeader(line); ok {
-			category = model.CardCategoryDeck
-			break
+		if strings.TrimSpace(line) == "" {
+			continue
 		}
+		if _, ok := parseCategoryHeader(line); ok {
+			hasHeaders = true
+			continue
+		}
+		cardLines++
 	}
-
-	type itemKey struct {
-		cardID   string
-		foil     model.FoilTreatment
-		category model.CardCategory
+	if hasHeaders {
+		category = model.CardCategoryDeck
 	}
-	var results []*thothv1.BulkImportCardLineResult
-	resultKeys := map[*thothv1.BulkImportCardLineResult]itemKey{}
+	// Checked before importing anything so an oversized list adds nothing.
+	if cardLines > maxBulkImportLines {
+		return status.Errorf(codes.InvalidArgument, "too many lines (max %d)", maxBulkImportLines)
+	}
 
 	for i, raw := range lines {
 		line := strings.TrimSpace(raw)
@@ -130,52 +137,54 @@ func (h *CardItemHandler) BulkImportCardItems(ctx context.Context, req *thothv1.
 			category = c
 			continue
 		}
-		res := &thothv1.BulkImportCardLineResult{LineNumber: int32(i + 1), Line: line}
-		results = append(results, res)
-		if len(results) > maxBulkImportLines {
-			return nil, status.Errorf(codes.InvalidArgument, "too many lines (max %d)", maxBulkImportLines)
-		}
-
-		parsed, err := parseMoxfieldLine(line)
-		if err != nil {
-			res.Error = err.Error()
-			continue
-		}
-		res.Name = parsed.Name
-		card, warning, err := h.resolveCard(ctx, parsed)
-		if err != nil {
-			res.Error = err.Error()
-			continue
-		}
-		res.Warning = warning
-
-		// The upsert adds to an existing row's quantity, so repeated lines merge.
-		if _, err := h.queries.UpsertCardItem(ctx, db.UpsertCardItemParams{
-			CollectionID:   uint64(req.CollectionId),
-			ScryfallCardID: card.ID,
-			FoilTreatment:  db.CardItemsFoilTreatment(parsed.Foil),
-			Category:       db.CardItemsCategory(category),
-			Quantity:       parsed.Quantity,
-		}); err != nil {
-			res.Error = "failed to add card"
-			continue
-		}
-		resultKeys[res] = itemKey{card.ID, parsed.Foil, category}
-	}
-
-	if len(resultKeys) > 0 {
-		rows, err := h.queries.ListCardItemsByCollection(ctx, uint64(req.CollectionId))
-		if err != nil {
-			return nil, status.Error(codes.Internal, "failed to fetch imported cards")
-		}
-		items := make(map[itemKey]*thothv1.CardItem, len(rows))
-		for _, r := range rows {
-			items[itemKey{r.ScryfallCardID, model.FoilTreatment(r.FoilTreatment), model.CardCategory(r.Category)}] = model.CardItemToProto(model.CardItemFromDB(r))
-		}
-		for res, key := range resultKeys {
-			res.Item = items[key]
+		res := h.importCardLine(ctx, uint64(req.CollectionId), category, line)
+		res.LineNumber = int32(i + 1)
+		if err := stream.Send(res); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
-	return &thothv1.BulkImportCardItemsResponse{Results: results}, nil
+// importCardLine adds the card on one bulk import line, reporting any
+// problem in the result rather than as an error.
+func (h *CardItemHandler) importCardLine(ctx context.Context, collectionID uint64, category model.CardCategory, line string) *thothv1.BulkImportCardLineResult {
+	res := &thothv1.BulkImportCardLineResult{Line: line}
+	parsed, err := parseMoxfieldLine(line)
+	if err != nil {
+		res.Error = err.Error()
+		return res
+	}
+	res.Name = parsed.Name
+	card, warning, err := h.resolveCard(ctx, parsed)
+	if err != nil {
+		res.Error = err.Error()
+		return res
+	}
+	res.Warning = warning
+
+	// The upsert adds to an existing row's quantity, so repeated lines merge.
+	if _, err := h.queries.UpsertCardItem(ctx, db.UpsertCardItemParams{
+		CollectionID:   collectionID,
+		ScryfallCardID: card.ID,
+		FoilTreatment:  db.CardItemsFoilTreatment(parsed.Foil),
+		Category:       db.CardItemsCategory(category),
+		Quantity:       parsed.Quantity,
+	}); err != nil {
+		res.Error = "failed to add card"
+		return res
+	}
+	row, err := h.queries.GetCardItemByKey(ctx, db.GetCardItemByKeyParams{
+		CollectionID:   collectionID,
+		ScryfallCardID: card.ID,
+		FoilTreatment:  db.CardItemsFoilTreatment(parsed.Foil),
+		Category:       db.CardItemsCategory(category),
+	})
+	if err != nil {
+		// The card was added; only the echo of the stored row is missing.
+		res.Warning = "added, but failed to fetch the stored card"
+		return res
+	}
+	res.Item = model.CardItemToProto(model.CardItemFromDB(db.ListCardItemsByCollectionRow(row)))
+	return res
 }

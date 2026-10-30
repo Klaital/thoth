@@ -87,6 +87,7 @@ func main() {
 
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(authInterceptor(jwtSvc)),
+		grpc.StreamInterceptor(authStreamInterceptor(jwtSvc)),
 	)
 	thothv1.RegisterUserServiceServer(grpcServer, handler.NewUserHandler(queries, jwtSvc))
 	thothv1.RegisterCollectionServiceServer(grpcServer, handler.NewCollectionHandler(sqlDB, queries))
@@ -135,7 +136,7 @@ func main() {
 	httpMux := http.NewServeMux()
 	httpMux.HandleFunc("/auth/google", oauthHandlers.Login)
 	httpMux.HandleFunc("/auth/google/callback", oauthHandlers.Callback)
-	httpMux.Handle("/", gwMux)
+	httpMux.Handle("/", noProxyBuffering(gwMux))
 
 	log.Printf("HTTP listening on %s", *httpAddr)
 	if err := http.ListenAndServe(*httpAddr, httpMux); err != nil {
@@ -180,15 +181,54 @@ func authInterceptor(jwtSvc *auth.JWTService) grpc.UnaryServerInterceptor {
 		if publicMethods[info.FullMethod] {
 			return handler(ctx, req)
 		}
-		token, err := auth.ExtractBearerToken(ctx)
+		ctx, err := authenticate(ctx, jwtSvc)
 		if err != nil {
-			return nil, status.Error(codes.Unauthenticated, "missing or invalid authorization header")
+			return nil, err
 		}
-		claims, err := jwtSvc.Validate(token)
-		if err != nil {
-			return nil, status.Error(codes.Unauthenticated, "invalid or expired token")
-		}
-		ctx = auth.ContextWithUserID(ctx, claims.UserID)
 		return handler(ctx, req)
 	}
+}
+
+func authStreamInterceptor(jwtSvc *auth.JWTService) grpc.StreamServerInterceptor {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if publicMethods[info.FullMethod] {
+			return handler(srv, ss)
+		}
+		ctx, err := authenticate(ss.Context(), jwtSvc)
+		if err != nil {
+			return err
+		}
+		return handler(srv, &authedStream{ServerStream: ss, ctx: ctx})
+	}
+}
+
+// authedStream overrides a stream's context with one carrying the caller's user ID.
+type authedStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *authedStream) Context() context.Context { return s.ctx }
+
+// authenticate validates the request's bearer token and returns ctx with the
+// caller's user ID attached.
+func authenticate(ctx context.Context, jwtSvc *auth.JWTService) (context.Context, error) {
+	token, err := auth.ExtractBearerToken(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "missing or invalid authorization header")
+	}
+	claims, err := jwtSvc.Validate(token)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "invalid or expired token")
+	}
+	return auth.ContextWithUserID(ctx, claims.UserID), nil
+}
+
+// noProxyBuffering tells nginx to pass responses through as they're written,
+// so streamed RPCs (e.g. card bulk import progress) arrive incrementally.
+func noProxyBuffering(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Accel-Buffering", "no")
+		next.ServeHTTP(w, r)
+	})
 }

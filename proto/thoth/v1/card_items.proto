@@ -105,10 +105,6 @@ message BulkImportCardLineResult {
   string name = 6;
 }
 
-message BulkImportCardItemsResponse {
-  repeated BulkImportCardLineResult results = 1;
-}
-
 service CardItemService {
   rpc AddCardItem(AddCardItemRequest) returns (AddCardItemResponse) {
     option (google.api.http) = {
@@ -117,7 +113,8 @@ service CardItemService {
     };
   }
 
-  rpc BulkImportCardItems(BulkImportCardItemsRequest) returns (BulkImportCardItemsResponse) {
+  // Streams one result per card line, in line order, as each is processed.
+  rpc BulkImportCardItems(BulkImportCardItemsRequest) returns (stream BulkImportCardLineResult) {
     option (google.api.http) = {
       post: "/v1/collections/{collection_id}/cards/bulk"
       body: "*"

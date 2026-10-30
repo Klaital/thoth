@@ -10,6 +10,7 @@ import {
   CardCategory,
   CARD_CATEGORY_LABELS,
   CARD_CATEGORY_OPTIONS,
+  BulkImportEntry,
 } from "../api/types";
 import AppLayout from "../components/AppLayout";
 import AddCardItemForm from "../components/AddCardItemForm";
@@ -44,10 +45,19 @@ function itemsEndpoint(type: Collection["type"], id: string): string | null {
   }
 }
 
-function sortedRecent(items: AnyItem[]): AnyItem[] {
-  return [...items]
-    .sort((a, b) => Number(BigInt(b.id) - BigInt(a.id)))
-    .slice(0, RECENT_LIMIT);
+// Mirrors parseMoxfieldLine and parseCategoryHeader in internal/handler/card_bulk.go.
+const MOXFIELD_LINE = /^(\d+)x?\s+(.+?)\s+\(([A-Za-z0-9]+)\)\s+(\S+)(?:\s+\*([FE])\*)?$/;
+const CARD_SECTION_HEADERS = ["commander", "deck", "sideboard"];
+
+function describeCardLine(line: string): { label: string; quantity: number } | null {
+  if (CARD_SECTION_HEADERS.includes(line.replace(/:$/, "").trim().toLowerCase())) return null;
+  const m = MOXFIELD_LINE.exec(line);
+  if (!m) return { label: line, quantity: 1 };
+  return { label: `${m[2]} · ${m[3].toUpperCase()} #${m[4]}`, quantity: Number(m[1]) };
+}
+
+function sortedNewestFirst(items: AnyItem[]): AnyItem[] {
+  return [...items].sort((a, b) => Number(BigInt(b.id) - BigInt(a.id)));
 }
 
 function itemLabel(item: AnyItem, type: Collection["type"]): string {
@@ -72,11 +82,18 @@ export default function AddItemPage() {
   const [addCount, setAddCount] = useState(0);
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkCategory, setBulkCategory] = useState<CardCategory>("CARD_CATEGORY_NONE");
+  // Lines of the latest bulk import, shown above the other recent items.
+  const [bulkEntries, setBulkEntries] = useState<BulkImportEntry[]>([]);
 
   useEffect(() => {
     apiFetch(`/v1/collections/${id}`)
       .then((r) => r.json())
-      .then((data) => setCollection(data.collection ?? null))
+      .then((data) => {
+        const col: Collection | null = data.collection ?? null;
+        setCollection(col);
+        // Cards imported into a deck are usually part of the main deck.
+        if (col?.type === "COLLECTION_TYPE_MTG_DECK") setBulkCategory("CARD_CATEGORY_DECK");
+      })
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -87,7 +104,7 @@ export default function AddItemPage() {
     const r = await apiFetch(endpoint);
     if (!r.ok) return;
     const data = await r.json();
-    setRecentItems(sortedRecent(data.items ?? []));
+    setRecentItems(sortedNewestFirst(data.items ?? []));
   }, [collection, id]);
 
   useEffect(() => {
@@ -107,6 +124,15 @@ export default function AddItemPage() {
 
   const collectionId = Number(id);
 
+  // Items from the latest bulk import are already listed via bulkEntries.
+  const bulkItemIds = new Set(bulkEntries.flatMap((e) => (e.item ? [(e.item as AnyItem).id] : [])));
+  const olderItems = recentItems.filter((i) => !bulkItemIds.has(i.id)).slice(0, RECENT_LIMIT);
+
+  function switchMode(bulk: boolean) {
+    setBulkMode(bulk);
+    setBulkEntries([]);
+  }
+
   return (
     <AppLayout>
       <div className="page">
@@ -117,10 +143,10 @@ export default function AddItemPage() {
             <h1>Add Item</h1>
             {collection.type !== "COLLECTION_TYPE_BOOKS" && collection.type !== "COLLECTION_TYPE_DVDS" && (
               <div className="mode-toggle" role="group" aria-label="Add mode">
-                <button type="button" aria-pressed={!bulkMode} onClick={() => setBulkMode(false)}>
+                <button type="button" aria-pressed={!bulkMode} onClick={() => switchMode(false)}>
                   Single item
                 </button>
-                <button type="button" aria-pressed={bulkMode} onClick={() => setBulkMode(true)}>
+                <button type="button" aria-pressed={bulkMode} onClick={() => switchMode(true)}>
                   Bulk import
                 </button>
               </div>
@@ -146,6 +172,8 @@ export default function AddItemPage() {
                     </div>
                   }
                   placeholder={CARD_BULK_PLACEHOLDER}
+                  describeLine={describeCardLine}
+                  onProgress={setBulkEntries}
                   help={
                     <>
                       Moxfield format: <em>&lt;qty&gt; &lt;name&gt; (&lt;set&gt;) &lt;number&gt;</em>, with an
@@ -168,6 +196,7 @@ export default function AddItemPage() {
                   collectionId={collectionId}
                   endpoint="sealed/bulk"
                   placeholder={SEALED_BULK_PLACEHOLDER}
+                  onProgress={setBulkEntries}
                   help={
                     <>
                       Lines with "Play Booster" or "Collector Booster" are read as{" "}
@@ -189,11 +218,22 @@ export default function AddItemPage() {
 
           <div className="recent-items-panel">
             <h2>Recently added</h2>
-            {recentItems.length === 0 ? (
+            {bulkEntries.length === 0 && olderItems.length === 0 ? (
               <p className="recent-empty">Nothing yet.</p>
             ) : (
               <ol className="recent-list">
-                {recentItems.map((item) => (
+                {bulkEntries.map((e) => (
+                  <li key={`bulk-${e.lineNumber}`} className={`recent-row ${e.status}`}>
+                    {e.status === "failed" && <span className="recent-failed-mark" aria-label="Failed">✕</span>}
+                    <div className="recent-info">
+                      <span>{e.item ? itemLabel(e.item as AnyItem, collection.type) : e.label}</span>
+                      {e.error && <span className="recent-error">{e.error}</span>}
+                      {e.warning && <span className="recent-warning">{e.warning}</span>}
+                    </div>
+                    {e.quantity > 1 && <span className="recent-qty">×{e.quantity}</span>}
+                  </li>
+                ))}
+                {olderItems.map((item) => (
                   <li key={item.id} className="recent-row">
                     {itemLabel(item, collection.type)}
                     {item.quantity > 1 && <span className="recent-qty">×{item.quantity}</span>}
