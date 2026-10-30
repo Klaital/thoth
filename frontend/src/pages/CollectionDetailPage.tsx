@@ -27,6 +27,8 @@ export default function CollectionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [moveTargets, setMoveTargets] = useState<Collection[]>([]);
 
   useEffect(() => {
     apiFetch(`/v1/collections/${id}`)
@@ -39,6 +41,25 @@ export default function CollectionDetailPage() {
       })
       .finally(() => setLoading(false));
   }, [id]);
+
+  const userId = token ? parseUserId(token) : null;
+  const isOwner = collection && userId !== null && String(userId) === collection.ownerId;
+
+  // Rows can disappear (e.g. merged by a category change), so only count
+  // selected ids that are still present.
+  const allIds = ((items ?? []) as Array<{ id: string }>).map((i) => i.id);
+  const selectedIds = allIds.filter((i) => selected.has(i));
+
+  // Other collections of the owner's that can hold this collection's items.
+  useEffect(() => {
+    if (!collection || !isOwner) return;
+    apiFetch("/v1/collections").then(async (r) => {
+      if (!r.ok) return;
+      const data = await r.json();
+      const all: Collection[] = data.collections ?? [];
+      setMoveTargets(all.filter((c) => c.id !== collection.id && itemKind(c.type) === itemKind(collection.type)));
+    });
+  }, [collection, isOwner]);
 
   async function fetchItems(col: Collection) {
     const endpoint = itemsEndpoint(col.type, id!);
@@ -67,7 +88,46 @@ export default function CollectionDetailPage() {
     const resp = await apiFetch(endpoint, { method: "DELETE" });
     if (resp.ok) {
       setItems((prev) => prev ? (prev as Array<{ id: string }>).filter((i) => i.id !== itemId) as typeof prev : prev);
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
     }
+  }
+
+  function handleToggleSelect(itemId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }
+
+  // Both throw on failure so the toolbar can report it.
+  async function handleMoveSelected(targetId: string) {
+    if (!collection) return;
+    const resp = await apiFetch(`/v1/collections/${id}/move-items`, {
+      method: "POST",
+      body: JSON.stringify({ itemIds: selectedIds, targetCollectionId: targetId }),
+    });
+    if (!resp.ok) throw new Error("move failed");
+    setSelected(new Set());
+    await fetchItems(collection);
+  }
+
+  async function handleDeleteSelected() {
+    if (!collection) return;
+    const n = selectedIds.length;
+    if (!confirm(`Remove ${n} item${n === 1 ? "" : "s"} from this collection? This cannot be undone.`)) return;
+    const resp = await apiFetch(`/v1/collections/${id}/remove-items`, {
+      method: "POST",
+      body: JSON.stringify({ itemIds: selectedIds }),
+    });
+    if (!resp.ok) throw new Error("delete failed");
+    setSelected(new Set());
+    await fetchItems(collection);
   }
 
   async function handleQuantityChange(itemId: string, delta: 1 | -1) {
@@ -130,9 +190,6 @@ export default function CollectionDetailPage() {
         .map((i) => ({ cardName: i.cardName, imageUri: i.imageUri }))
     : [];
 
-  const userId = token ? parseUserId(token) : null;
-  const isOwner = collection && userId !== null && String(userId) === collection.ownerId;
-
   if (loading) return <AppLayout><p className="loading">Loading…</p></AppLayout>;
   if (error || !collection) return <AppLayout><p className="error-page">{error ?? "Collection not found."}</p></AppLayout>;
 
@@ -176,17 +233,97 @@ export default function CollectionDetailPage() {
             <p>No items yet.{isOwner ? " Add one to get started." : ""}</p>
           </div>
         ) : (
-          <ItemList
-            collection={collection}
-            items={items}
-            isOwner={!!isOwner}
-            onRemove={handleRemoveItem}
-            onQuantityChange={handleQuantityChange}
-            onCategoryChange={handleCategoryChange}
-          />
+          <>
+            {isOwner && (
+              <SelectionToolbar
+                selectedCount={selectedIds.length}
+                moveTargets={moveTargets}
+                onSelectAll={() => setSelected(new Set(allIds))}
+                onInvert={() => setSelected(new Set(allIds.filter((i) => !selected.has(i))))}
+                onClear={() => setSelected(new Set())}
+                onMove={handleMoveSelected}
+                onDelete={handleDeleteSelected}
+              />
+            )}
+            <ItemList
+              collection={collection}
+              items={items}
+              isOwner={!!isOwner}
+              selected={selected}
+              onToggleSelect={handleToggleSelect}
+              onRemove={handleRemoveItem}
+              onQuantityChange={handleQuantityChange}
+              onCategoryChange={handleCategoryChange}
+            />
+          </>
         )}
       </div>
     </AppLayout>
+  );
+}
+
+interface SelectionToolbarProps {
+  selectedCount: number;
+  moveTargets: Collection[];
+  onSelectAll: () => void;
+  onInvert: () => void;
+  onClear: () => void;
+  onMove: (targetId: string) => Promise<void>;
+  onDelete: () => Promise<void>;
+}
+
+function SelectionToolbar({ selectedCount, moveTargets, onSelectAll, onInvert, onClear, onMove, onDelete }: SelectionToolbarProps) {
+  const [target, setTarget] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  async function run(action: () => Promise<void>, failMsg: string) {
+    setBusy(true);
+    setFailed(null);
+    try {
+      await action();
+    } catch {
+      setFailed(failMsg);
+    }
+    setBusy(false);
+  }
+
+  const none = selectedCount === 0;
+  return (
+    <div className="selection-toolbar">
+      <button className="btn-ghost" onClick={onSelectAll}>Select all</button>
+      <button className="btn-ghost" onClick={onInvert}>Invert selection</button>
+      <button className="btn-ghost" onClick={onClear} disabled={selectedCount === 0}>Clear selection</button>
+      <span className="selection-count">{selectedCount} selected</span>
+      {failed && <span className="selection-error">{failed}</span>}
+      <div className="selection-actions">
+        <select
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          disabled={moveTargets.length === 0}
+          aria-label="Collection to move selected items to"
+        >
+          <option value="">{moveTargets.length === 0 ? "No other compatible collections" : "Move to…"}</option>
+          {moveTargets.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+        <button
+          className="btn-sm"
+          disabled={none || !target || busy}
+          onClick={() => run(() => onMove(target), "Move failed.")}
+        >
+          Move
+        </button>
+        <button
+          className="btn-danger"
+          disabled={none || busy}
+          onClick={() => run(onDelete, "Delete failed.")}
+        >
+          Delete
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -194,34 +331,47 @@ interface ItemListProps {
   collection: Collection;
   items: CardItem[] | SealedItem[] | BookDvdItem[];
   isOwner: boolean;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
   onRemove: (id: string) => void;
   onQuantityChange: (id: string, delta: 1 | -1) => void;
   onCategoryChange: (id: string, category: CardCategory) => void;
 }
 
-function ItemList({ collection, items, isOwner, onRemove, onQuantityChange, onCategoryChange }: ItemListProps) {
+function ItemList({ collection, items, onCategoryChange, ...rowProps }: ItemListProps) {
   const type = collection.type;
   if (type === "COLLECTION_TYPE_MTG_CARDS" || type === "COLLECTION_TYPE_MTG_DECK") {
-    return (
-      <CardItemList
-        items={items as CardItem[]}
-        isOwner={isOwner}
-        onRemove={onRemove}
-        onQuantityChange={onQuantityChange}
-        onCategoryChange={onCategoryChange}
-      />
-    );
+    return <CardItemList items={items as CardItem[]} onCategoryChange={onCategoryChange} {...rowProps} />;
   }
   if (type === "COLLECTION_TYPE_MTG_SEALED") {
-    return <SealedItemList items={items as SealedItem[]} isOwner={isOwner} onRemove={onRemove} onQuantityChange={onQuantityChange} />;
+    return <SealedItemList items={items as SealedItem[]} {...rowProps} />;
   }
-  return <BookDvdItemList items={items as BookDvdItem[]} isOwner={isOwner} onRemove={onRemove} onQuantityChange={onQuantityChange} />;
+  return <BookDvdItemList items={items as BookDvdItem[]} {...rowProps} />;
 }
 
 interface RowProps {
   isOwner: boolean;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
   onRemove: (id: string) => void;
   onQuantityChange: (id: string, delta: 1 | -1) => void;
+}
+
+function SelectCheckbox({ id, label, selected, onToggleSelect }: {
+  id: string;
+  label: string;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
+}) {
+  return (
+    <input
+      type="checkbox"
+      className="item-select"
+      checked={selected.has(id)}
+      onChange={() => onToggleSelect(id)}
+      aria-label={`Select ${label}`}
+    />
+  );
 }
 
 function RemoveButton({ onRemove }: { onRemove: () => void }) {
@@ -332,14 +482,15 @@ function CardItemList({ items, ...rowProps }: { items: CardItem[] } & CardRowPro
   );
 }
 
-function CardRows({ items, isOwner, onRemove, onQuantityChange, onCategoryChange }: { items: CardItem[] } & CardRowProps) {
+function CardRows({ items, isOwner, selected, onToggleSelect, onRemove, onQuantityChange, onCategoryChange }: { items: CardItem[] } & CardRowProps) {
   return (
     <div className="item-list">
       {items.map((item) => {
         const unit = unitPrice(item);
         const subtotal = unit !== null ? unit * item.quantity : null;
         return (
-          <div key={item.id} className="item-row">
+          <div key={item.id} className={rowClass(selected, item.id)}>
+            {isOwner && <SelectCheckbox id={item.id} label={item.cardName} selected={selected} onToggleSelect={onToggleSelect} />}
             {item.imageUri && (
               <img src={item.imageUri} alt={item.cardName} className="card-thumb" />
             )}
@@ -379,14 +530,15 @@ function CardRows({ items, isOwner, onRemove, onQuantityChange, onCategoryChange
   );
 }
 
-function SealedItemList({ items, isOwner, onRemove, onQuantityChange }: { items: SealedItem[] } & RowProps) {
+function SealedItemList({ items, isOwner, selected, onToggleSelect, onRemove, onQuantityChange }: { items: SealedItem[] } & RowProps) {
   return (
     <div className="item-list">
       {items.map((item) => {
         const typeLabel = SEALED_ITEM_TYPE_LABELS[item.itemType] ?? item.itemType;
         const displayName = item.name || (item.setCode ? item.setCode.toUpperCase() : null);
         return (
-          <div key={item.id} className="item-row">
+          <div key={item.id} className={rowClass(selected, item.id)}>
+            {isOwner && <SelectCheckbox id={item.id} label={displayName ?? typeLabel} selected={selected} onToggleSelect={onToggleSelect} />}
             <div className="item-info">
               <span className="item-name">{displayName ?? typeLabel}</span>
               <span className="item-meta">
@@ -404,11 +556,12 @@ function SealedItemList({ items, isOwner, onRemove, onQuantityChange }: { items:
   );
 }
 
-function BookDvdItemList({ items, isOwner, onRemove, onQuantityChange }: { items: BookDvdItem[] } & RowProps) {
+function BookDvdItemList({ items, isOwner, selected, onToggleSelect, onRemove, onQuantityChange }: { items: BookDvdItem[] } & RowProps) {
   return (
     <div className="item-list">
       {items.map((item) => (
-        <div key={item.id} className="item-row">
+        <div key={item.id} className={rowClass(selected, item.id)}>
+          {isOwner && <SelectCheckbox id={item.id} label={item.title} selected={selected} onToggleSelect={onToggleSelect} />}
           <div className="item-info">
             <span className="item-name">{item.title}</span>
             {item.upc && <span className="item-meta">UPC: {item.upc}</span>}
@@ -422,8 +575,18 @@ function BookDvdItemList({ items, isOwner, onRemove, onQuantityChange }: { items
   );
 }
 
+function rowClass(selected: Set<string>, id: string): string {
+  return selected.has(id) ? "item-row selected" : "item-row";
+}
+
 function isCardCollection(type: Collection["type"] | undefined): boolean {
   return type === "COLLECTION_TYPE_MTG_CARDS" || type === "COLLECTION_TYPE_MTG_DECK";
+}
+
+// Collections of the same kind can exchange items; cards and decks share a kind.
+// Mirrors itemKind in internal/handler/collection_items.go.
+function itemKind(type: Collection["type"]): Collection["type"] {
+  return type === "COLLECTION_TYPE_MTG_DECK" ? "COLLECTION_TYPE_MTG_CARDS" : type;
 }
 
 function itemsEndpoint(type: Collection["type"], id: string): string | null {

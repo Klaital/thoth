@@ -36,3 +36,14 @@ FROM card_items ci
 JOIN scryfall_cards sc ON sc.id = ci.scryfall_card_id
 WHERE ci.category = 'commander' AND ci.collection_id IN (sqlc.slice('collection_ids'))
 ORDER BY ci.collection_id, sc.name;
+
+-- name: ListCardItemsByIDs :many
+SELECT * FROM card_items
+WHERE collection_id = ? AND id IN (sqlc.slice('ids'));
+
+-- name: MoveCardItem :exec
+UPDATE card_items SET collection_id = ? WHERE id = ?;
+
+-- name: DeleteCardItemsByIDs :exec
+DELETE FROM card_items
+WHERE collection_id = ? AND id IN (sqlc.slice('ids'));

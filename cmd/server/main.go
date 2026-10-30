@@ -89,7 +89,7 @@ func main() {
 		grpc.UnaryInterceptor(authInterceptor(jwtSvc)),
 	)
 	thothv1.RegisterUserServiceServer(grpcServer, handler.NewUserHandler(queries, jwtSvc))
-	thothv1.RegisterCollectionServiceServer(grpcServer, handler.NewCollectionHandler(queries))
+	thothv1.RegisterCollectionServiceServer(grpcServer, handler.NewCollectionHandler(sqlDB, queries))
 	thothv1.RegisterCardItemServiceServer(grpcServer, handler.NewCardItemHandler(queries))
 	thothv1.RegisterSealedItemServiceServer(grpcServer, handler.NewSealedItemHandler(queries, upcClient))
 	thothv1.RegisterBookDvdItemServiceServer(grpcServer, handler.NewBookDvdItemHandler(queries))

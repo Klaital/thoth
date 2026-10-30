@@ -79,6 +79,27 @@ message DeleteCollectionRequest {
 
 message DeleteCollectionResponse {}
 
+message MoveCollectionItemsRequest {
+  int64 collection_id = 1;
+  // IDs of card, sealed or book/DVD items in collection_id, depending on its
+  // type. IDs that aren't in the collection are ignored.
+  repeated int64 item_ids = 2;
+  // Must hold the same kind of item. Card and deck collections are
+  // interchangeable. A card moved into a collection that already holds the
+  // same card, foil treatment and category is merged into that row.
+  int64 target_collection_id = 3;
+}
+
+message MoveCollectionItemsResponse {}
+
+message RemoveCollectionItemsRequest {
+  int64 collection_id = 1;
+  // IDs that aren't in the collection are ignored.
+  repeated int64 item_ids = 2;
+}
+
+message RemoveCollectionItemsResponse {}
+
 service CollectionService {
   rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse) {
     option (google.api.http) = {
@@ -109,6 +130,20 @@ service CollectionService {
   rpc DeleteCollection(DeleteCollectionRequest) returns (DeleteCollectionResponse) {
     option (google.api.http) = {
       delete: "/v1/collections/{id}"
+    };
+  }
+
+  rpc MoveCollectionItems(MoveCollectionItemsRequest) returns (MoveCollectionItemsResponse) {
+    option (google.api.http) = {
+      post: "/v1/collections/{collection_id}/move-items"
+      body: "*"
+    };
+  }
+
+  rpc RemoveCollectionItems(RemoveCollectionItemsRequest) returns (RemoveCollectionItemsResponse) {
+    option (google.api.http) = {
+      post: "/v1/collections/{collection_id}/remove-items"
+      body: "*"
     };
   }
 }

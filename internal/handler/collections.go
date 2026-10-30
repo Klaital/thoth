@@ -16,11 +16,12 @@ import (
 
 type CollectionHandler struct {
 	thothv1.UnimplementedCollectionServiceServer
+	sqlDB   *sql.DB
 	queries *db.Queries
 }
 
-func NewCollectionHandler(queries *db.Queries) *CollectionHandler {
-	return &CollectionHandler{queries: queries}
+func NewCollectionHandler(sqlDB *sql.DB, queries *db.Queries) *CollectionHandler {
+	return &CollectionHandler{sqlDB: sqlDB, queries: queries}
 }
 
 func (h *CollectionHandler) CreateCollection(ctx context.Context, req *thothv1.CreateCollectionRequest) (*thothv1.CreateCollectionResponse, error) {
