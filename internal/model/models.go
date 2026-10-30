@@ -61,6 +61,7 @@ type CardItem struct {
 	SetCode         string
 	CollectorNumber string
 	ImageURI        string
+	ScryfallURI     string
 	PricesJSON      string
 }
 

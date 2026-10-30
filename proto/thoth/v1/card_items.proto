@@ -36,6 +36,9 @@ message CardItem {
   // JSON-encoded price map from Scryfall (usd, usd_foil, usd_etched, etc.)
   string prices_json = 11;
   CardCategory category = 12;
+  // Link to the card's page on scryfall.com. Empty until the syncer has run
+  // since this field was added.
+  string scryfall_uri = 13;
 }
 
 message AddCardItemRequest {

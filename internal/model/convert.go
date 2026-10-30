@@ -110,6 +110,7 @@ func CardItemFromDB(r db.ListCardItemsByCollectionRow) CardItem {
 		SetCode:         r.SetCode,
 		CollectorNumber: r.CollectorNumber,
 		ImageURI:        r.ImageUri.String,
+		ScryfallURI:     r.ScryfallUri.String,
 		PricesJSON:      string(r.PricesJson),
 	}
 }
@@ -127,6 +128,7 @@ func CardItemToProto(c CardItem) *thothv1.CardItem {
 		SetCode:         c.SetCode,
 		CollectorNumber: c.CollectorNumber,
 		ImageUri:        c.ImageURI,
+		ScryfallUri:     c.ScryfallURI,
 		PricesJson:      c.PricesJSON,
 	}
 }

@@ -41,6 +41,7 @@ export interface CardItem {
   setCode: string;
   collectorNumber: string;
   imageUri: string;
+  scryfallUri: string;
   pricesJson: string;
 }
 

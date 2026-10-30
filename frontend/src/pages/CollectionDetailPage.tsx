@@ -495,7 +495,13 @@ function CardRows({ items, isOwner, selected, onToggleSelect, onRemove, onQuanti
               <img src={item.imageUri} alt={item.cardName} className="card-thumb" />
             )}
             <div className="item-info">
-              <span className="item-name">{item.cardName}</span>
+              <span className="item-name">
+                {item.scryfallUri ? (
+                  <a href={item.scryfallUri} target="_blank" rel="noopener noreferrer" title="View on Scryfall">
+                    {item.cardName}
+                  </a>
+                ) : item.cardName}
+              </span>
               <span className="item-meta">
                 {item.setCode.toUpperCase()} #{item.collectorNumber} &middot; {FOIL_TREATMENT_LABELS[item.foilTreatment]}
               </span>

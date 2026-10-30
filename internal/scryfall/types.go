@@ -26,6 +26,7 @@ type RawCard struct {
 	Name            string         `json:"name"`
 	Set             string         `json:"set"`
 	CollectorNumber string         `json:"collector_number"`
+	ScryfallURI     string         `json:"scryfall_uri"`
 	ImageURIs       *imageURIs     `json:"image_uris"`
 	CardFaces       []cardFace     `json:"card_faces"`
 	Prices          map[string]any `json:"prices"`

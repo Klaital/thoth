@@ -154,10 +154,10 @@ func bulkUpsert(ctx context.Context, db *sql.DB, batch []RawCard) error {
 	}
 
 	placeholders := make([]string, len(batch))
-	args := make([]any, 0, len(batch)*8)
+	args := make([]any, 0, len(batch)*9)
 
 	for i, card := range batch {
-		placeholders[i] = "(?,?,?,?,?,?,?,?,NOW())"
+		placeholders[i] = "(?,?,?,?,?,?,?,?,?,NOW())"
 		pricesJSON, err := json.Marshal(card.Prices)
 		if err != nil {
 			pricesJSON = []byte("null")
@@ -167,25 +167,31 @@ func bulkUpsert(ctx context.Context, db *sql.DB, batch []RawCard) error {
 		if imageURI != "" {
 			imageArg = imageURI
 		}
+		var scryfallURIArg any
+		if card.ScryfallURI != "" {
+			scryfallURIArg = card.ScryfallURI
+		}
 		args = append(args,
 			card.ID,
 			card.Name,
 			card.Set,
 			card.CollectorNumber,
 			imageArg,
+			scryfallURIArg,
 			card.Foil,
 			card.Nonfoil,
 			string(pricesJSON),
 		)
 	}
 
-	query := `INSERT INTO scryfall_cards (id, name, set_code, collector_number, image_uri, foil, nonfoil, prices_json, synced_at) VALUES ` +
+	query := `INSERT INTO scryfall_cards (id, name, set_code, collector_number, image_uri, scryfall_uri, foil, nonfoil, prices_json, synced_at) VALUES ` +
 		strings.Join(placeholders, ",") +
 		` ON DUPLICATE KEY UPDATE
 			name             = VALUES(name),
 			set_code         = VALUES(set_code),
 			collector_number = VALUES(collector_number),
 			image_uri        = VALUES(image_uri),
+			scryfall_uri     = VALUES(scryfall_uri),
 			foil             = VALUES(foil),
 			nonfoil          = VALUES(nonfoil),
 			prices_json      = VALUES(prices_json),
