@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	setsURL       = "https://api.scryfall.com/sets"
 	bulkDataURL   = "https://api.scryfall.com/bulk-data/default_cards"
 	cacheFile     = "default_cards.jsonl.gz"
 	cacheMetaFile = "default_cards.jsonl.gz.meta"
@@ -22,6 +23,32 @@ const (
 type cacheMeta struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	FetchedAt time.Time `json:"fetched_at"`
+}
+
+// FetchSets retrieves all sets from the Scryfall /sets endpoint.
+func FetchSets() (SetsResponse, error) {
+	req, err := http.NewRequest(http.MethodGet, setsURL, nil)
+	if err != nil {
+		return SetsResponse{}, err
+	}
+	req.Header.Set("User-Agent", "thoth-collection-manager/1.0")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return SetsResponse{}, fmt.Errorf("fetching sets: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return SetsResponse{}, fmt.Errorf("sets: HTTP %d", resp.StatusCode)
+	}
+
+	var result SetsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return SetsResponse{}, fmt.Errorf("decoding sets: %w", err)
+	}
+	return result, nil
 }
 
 // FetchBulkDataInfo retrieves the current metadata for the default_cards bulk file.

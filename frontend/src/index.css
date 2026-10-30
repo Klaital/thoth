@@ -77,6 +77,26 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   width: auto;
   flex: 1;
 }
+.mode-toggle {
+  display: flex;
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.mode-toggle button {
+  flex: 1;
+  padding: 8px;
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 0;
+  font-size: 13px;
+}
+.mode-toggle button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
 .added-confirmation {
   font-size: 13px;
   color: var(--text-muted);

@@ -1,0 +1,14 @@
+[build]
+  cmd     = "go build -o ./tmp/server ./cmd/server"
+  bin     = "./tmp/server"
+  delay   = 500
+  include_ext = ["go"]
+  exclude_dir = ["frontend", "bin", "tmp", "internal/gen", "internal/db"]
+
+[log]
+  time = false
+
+[color]
+  build = "yellow"
+  runner = "green"
+  watcher = "cyan"

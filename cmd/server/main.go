@@ -27,6 +27,7 @@ import (
 	"github.com/klaital/thoth/internal/db"
 	"github.com/klaital/thoth/db/migrations"
 	thothv1 "github.com/klaital/thoth/internal/gen/thoth/v1"
+	"github.com/klaital/thoth/internal/goupc"
 	"github.com/klaital/thoth/internal/handler"
 )
 
@@ -61,6 +62,7 @@ func main() {
 	googleID    := mustEnv("GOOGLE_CLIENT_ID")
 	googleSec   := mustEnv("GOOGLE_CLIENT_SECRET")
 	googleRedir := mustEnv("GOOGLE_REDIRECT_URL")
+	goupcKey    := os.Getenv("GOUPC_API_KEY") // optional; UPC lookups disabled if empty
 
 	sqlDB, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -78,13 +80,18 @@ func main() {
 	jwtSvc := auth.NewJWTService(jwtSecret)
 	googleOAuth := auth.NewGoogleOAuth(googleID, googleSec, googleRedir)
 
+	var upcClient *goupc.Client
+	if goupcKey != "" {
+		upcClient = goupc.New(goupcKey)
+	}
+
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(authInterceptor(jwtSvc)),
 	)
 	thothv1.RegisterUserServiceServer(grpcServer, handler.NewUserHandler(queries, jwtSvc))
 	thothv1.RegisterCollectionServiceServer(grpcServer, handler.NewCollectionHandler(queries))
 	thothv1.RegisterCardItemServiceServer(grpcServer, handler.NewCardItemHandler(queries))
-	thothv1.RegisterSealedItemServiceServer(grpcServer, handler.NewSealedItemHandler(queries))
+	thothv1.RegisterSealedItemServiceServer(grpcServer, handler.NewSealedItemHandler(queries, upcClient))
 	thothv1.RegisterBookDvdItemServiceServer(grpcServer, handler.NewBookDvdItemHandler(queries))
 	thothv1.RegisterScryfallServiceServer(grpcServer, handler.NewScryfallHandler(queries))
 	reflection.Register(grpcServer)

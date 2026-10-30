@@ -11,6 +11,7 @@ import {
 import AppLayout from "../components/AppLayout";
 import AddCardItemForm from "../components/AddCardItemForm";
 import AddSealedItemForm from "../components/AddSealedItemForm";
+import BulkImportSealedForm from "../components/BulkImportSealedForm";
 import AddBookDvdItemForm from "../components/AddBookDvdItemForm";
 
 type AnyItem = CardItem | SealedItem | BookDvdItem;
@@ -58,6 +59,7 @@ export default function AddItemPage() {
   const [loading, setLoading] = useState(true);
   const [recentItems, setRecentItems] = useState<AnyItem[]>([]);
   const [addCount, setAddCount] = useState(0);
+  const [bulkMode, setBulkMode] = useState(false);
 
   useEffect(() => {
     apiFetch(`/v1/collections/${id}`)
@@ -105,7 +107,21 @@ export default function AddItemPage() {
               <AddCardItemForm collectionId={collectionId} onDone={onSuccess} onItemAdded={onItemAdded} />
             )}
             {collection.type === "COLLECTION_TYPE_MTG_SEALED" && (
-              <AddSealedItemForm collectionId={collectionId} onSuccess={onSuccess} onItemAdded={onItemAdded} />
+              <>
+                <div className="mode-toggle" role="group" aria-label="Add mode">
+                  <button type="button" aria-pressed={!bulkMode} onClick={() => setBulkMode(false)}>
+                    Single item
+                  </button>
+                  <button type="button" aria-pressed={bulkMode} onClick={() => setBulkMode(true)}>
+                    Bulk import
+                  </button>
+                </div>
+                {bulkMode ? (
+                  <BulkImportSealedForm collectionId={collectionId} onSuccess={onSuccess} onItemAdded={onItemAdded} />
+                ) : (
+                  <AddSealedItemForm collectionId={collectionId} onSuccess={onSuccess} onItemAdded={onItemAdded} />
+                )}
+              </>
             )}
             {(collection.type === "COLLECTION_TYPE_BOOKS" || collection.type === "COLLECTION_TYPE_DVDS") && (
               <AddBookDvdItemForm collectionId={collectionId} onSuccess={onSuccess} onItemAdded={onItemAdded} />

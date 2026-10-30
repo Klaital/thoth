@@ -220,6 +220,10 @@ func sealedItemTypeToProto(t SealedItemType) thothv1.SealedItemType {
 	}
 }
 
+func SealedItemTypeToProto(t SealedItemType) thothv1.SealedItemType {
+	return sealedItemTypeToProto(t)
+}
+
 func SealedItemTypeFromProto(t thothv1.SealedItemType) SealedItemType {
 	switch t {
 	case thothv1.SealedItemType_SEALED_ITEM_TYPE_SECRET_LAIR:

@@ -33,6 +33,19 @@ type RawCard struct {
 	Nonfoil         bool           `json:"nonfoil"`
 }
 
+// RawSet is the subset of fields from the Scryfall /sets API we persist locally.
+type RawSet struct {
+	Code        string `json:"code"`
+	Name        string `json:"name"`
+	ReleasedAt  string `json:"released_at"` // "YYYY-MM-DD" or ""
+	IconSVGURI  string `json:"icon_svg_uri"`
+}
+
+// SetsResponse is the top-level object returned by GET https://api.scryfall.com/sets.
+type SetsResponse struct {
+	Data []RawSet `json:"data"`
+}
+
 // BestImageURI returns the normal image URI, falling back to the first card face
 // for double-faced cards where the top-level image_uris is absent.
 func (c *RawCard) BestImageURI() string {

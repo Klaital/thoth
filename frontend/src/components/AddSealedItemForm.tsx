@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api/auth";
 import {
   SealedItemType,
@@ -13,6 +13,12 @@ interface Props {
 }
 
 export default function AddSealedItemForm({ collectionId, onSuccess, onItemAdded }: Props) {
+  const [upc, setUpc] = useState("");
+  const [upcLooking, setUpcLooking] = useState(false);
+  const [upcError, setUpcError] = useState<string | null>(null);
+  const [upcSetName, setUpcSetName] = useState("");
+  const [filledViaUpc, setFilledViaUpc] = useState(false);
+
   const [itemType, setItemType] = useState<SealedItemType>("SEALED_ITEM_TYPE_PLAY_BOOSTER_BOX");
   const [setCode, setSetCode] = useState("");
   const [name, setName] = useState("");
@@ -22,6 +28,8 @@ export default function AddSealedItemForm({ collectionId, onSuccess, onItemAdded
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [addedCount, setAddedCount] = useState(0);
+
+  const upcRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     apiFetch("/v1/scryfall/set-codes")
@@ -33,6 +41,36 @@ export default function AddSealedItemForm({ collectionId, onSuccess, onItemAdded
       })
       .catch(() => {});
   }, []);
+
+  async function lookupUPC() {
+    const code = upc.trim();
+    if (!code) return;
+    setUpcLooking(true);
+    setUpcError(null);
+    try {
+      const r = await apiFetch(`/v1/upc/${encodeURIComponent(code)}`);
+      if (!r.ok) {
+        setUpcError(r.status === 404 ? "Barcode not found." : "Lookup failed — fill in manually.");
+        return;
+      }
+      const data = await r.json();
+      if (data.itemType && data.itemType !== "SEALED_ITEM_TYPE_UNSPECIFIED") {
+        setItemType(data.itemType as SealedItemType);
+      }
+      if (data.setCode) setSetCode(data.setCode);
+      setUpcSetName(data.setName ?? "");
+      setFilledViaUpc(true);
+    } finally {
+      setUpcLooking(false);
+    }
+  }
+
+  function handleUpcKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      lookupUPC();
+    }
+  }
 
   const isSecretLair = itemType === "SEALED_ITEM_TYPE_SECRET_LAIR";
 
@@ -60,9 +98,18 @@ export default function AddSealedItemForm({ collectionId, onSuccess, onItemAdded
       }
       onItemAdded?.();
       setName("");
+      setSetCode("");
       setQuantity(1);
       setNotes("");
       setAddedCount((c) => c + 1);
+
+      if (filledViaUpc) {
+        setUpc("");
+        setUpcSetName("");
+        setFilledViaUpc(false);
+        // Yield to the DOM before re-focusing so the state flush completes.
+        setTimeout(() => upcRef.current?.focus(), 0);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -70,6 +117,26 @@ export default function AddSealedItemForm({ collectionId, onSuccess, onItemAdded
 
   return (
     <form onSubmit={handleSubmit}>
+      <div className="field">
+        <label htmlFor="upc">Barcode (UPC)</label>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <input
+            id="upc"
+            ref={upcRef}
+            value={upc}
+            onChange={(e) => { setUpc(e.target.value); setUpcError(null); }}
+            onBlur={() => { if (upc.trim()) lookupUPC(); }}
+            onKeyDown={handleUpcKeyDown}
+            placeholder="Scan or type barcode…"
+            autoComplete="off"
+            inputMode="numeric"
+            style={{ flex: 1 }}
+          />
+          {upcLooking && <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Looking up…</span>}
+        </div>
+        {upcError && <p className="error-msg" role="alert" style={{ marginTop: "0.25rem" }}>{upcError}</p>}
+      </div>
+
       <div className="field">
         <label htmlFor="item-type">Type</label>
         <select
@@ -101,6 +168,11 @@ export default function AddSealedItemForm({ collectionId, onSuccess, onItemAdded
           <datalist id="set-codes-list">
             {setCodes.map((sc) => <option key={sc} value={sc} />)}
           </datalist>
+        )}
+        {upcSetName && (
+          <p style={{ margin: "0.25rem 0 0", fontSize: "0.82rem", color: "var(--text-muted)" }}>
+            Set identified as: <em>{upcSetName}</em>
+          </p>
         )}
       </div>
 

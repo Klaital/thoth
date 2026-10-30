@@ -10,6 +10,9 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
+
+	"github.com/klaital/thoth/internal/db"
 )
 
 const (
@@ -20,19 +23,53 @@ const (
 // Syncer coordinates fetching Scryfall bulk data and writing it to the database.
 type Syncer struct {
 	db       *sql.DB
+	queries  *db.Queries
 	cacheDir string
 }
 
 // NewSyncer creates a Syncer using the given database connection and cache directory.
-func NewSyncer(db *sql.DB, cacheDir string) *Syncer {
-	return &Syncer{db: db, cacheDir: cacheDir}
+func NewSyncer(sqlDB *sql.DB, cacheDir string) *Syncer {
+	return &Syncer{db: sqlDB, queries: db.New(sqlDB), cacheDir: cacheDir}
+}
+
+// SyncSets fetches all sets from the Scryfall /sets endpoint and upserts them.
+func (s *Syncer) SyncSets(ctx context.Context) (int, error) {
+	resp, err := FetchSets()
+	if err != nil {
+		return 0, fmt.Errorf("fetching sets: %w", err)
+	}
+	for _, set := range resp.Data {
+		var releasedAt sql.NullTime
+		if set.ReleasedAt != "" {
+			t, err := time.Parse("2006-01-02", set.ReleasedAt)
+			if err == nil {
+				releasedAt = sql.NullTime{Time: t, Valid: true}
+			}
+		}
+		if err := s.queries.UpsertScryfallSet(ctx, db.UpsertScryfallSetParams{
+			Code:       set.Code,
+			Name:       set.Name,
+			ReleasedAt: releasedAt,
+			IconSvgUri: sql.NullString{String: set.IconSVGURI, Valid: set.IconSVGURI != ""},
+		}); err != nil {
+			return 0, fmt.Errorf("upserting set %s: %w", set.Code, err)
+		}
+	}
+	return len(resp.Data), nil
 }
 
 // Sync runs a full sync:
-//  1. Fetches the Scryfall bulk-data metadata
-//  2. Downloads the bulk file only if it has been updated since the last fetch
-//  3. Streams-parses the JSON array and bulk-upserts into the database
+//  1. Fetches all sets from the Scryfall /sets endpoint
+//  2. Fetches the Scryfall bulk-data metadata
+//  3. Downloads the bulk file only if it has been updated since the last fetch
+//  4. Streams-parses the JSON array and bulk-upserts into the database
 func (s *Syncer) Sync(ctx context.Context) (SyncStats, error) {
+	nSets, err := s.SyncSets(ctx)
+	if err != nil {
+		return SyncStats{}, fmt.Errorf("syncing sets: %w", err)
+	}
+	log.Printf("scryfall: synced %d sets", nSets)
+
 	info, err := FetchBulkDataInfo()
 	if err != nil {
 		return SyncStats{}, fmt.Errorf("fetching bulk data info: %w", err)

@@ -88,6 +88,20 @@ export interface SealedItem {
   notes: string;
 }
 
+export interface BulkImportLineResult {
+  lineNumber: number;
+  line: string;
+  item?: SealedItem;
+  warning?: string;
+  error?: string;
+}
+
+export interface LookupUPCResponse {
+  setName: string;
+  setCode: string;
+  itemType: SealedItemType;
+}
+
 export interface BookDvdItem {
   id: string;
   collectionId: string;

@@ -75,6 +75,37 @@ message RemoveSealedItemRequest {
 
 message RemoveSealedItemResponse {}
 
+message BulkImportSealedItemsRequest {
+  int64 collection_id = 1;
+  // One product per line. Blank lines are ignored.
+  string text = 2;
+}
+
+message BulkImportLineResult {
+  int32 line_number = 1;
+  string line = 2;
+  // Set when the line was added (or merged into a duplicate line's item).
+  SealedItem item = 3;
+  // Non-fatal issue, e.g. the set name could not be matched to a set code.
+  string warning = 4;
+  string error = 5;
+}
+
+message BulkImportSealedItemsResponse {
+  repeated BulkImportLineResult results = 1;
+}
+
+message LookupUPCRequest {
+  string upc = 1;
+}
+
+message LookupUPCResponse {
+  string name = 1;
+  string set_name = 2;
+  SealedItemType item_type = 3;
+  string set_code = 4;
+}
+
 service SealedItemService {
   rpc AddSealedItem(AddSealedItemRequest) returns (AddSealedItemResponse) {
     option (google.api.http) = {
@@ -99,6 +130,19 @@ service SealedItemService {
   rpc RemoveSealedItem(RemoveSealedItemRequest) returns (RemoveSealedItemResponse) {
     option (google.api.http) = {
       delete: "/v1/sealed/{id}"
+    };
+  }
+
+  rpc BulkImportSealedItems(BulkImportSealedItemsRequest) returns (BulkImportSealedItemsResponse) {
+    option (google.api.http) = {
+      post: "/v1/collections/{collection_id}/sealed/bulk"
+      body: "*"
+    };
+  }
+
+  rpc LookupUPC(LookupUPCRequest) returns (LookupUPCResponse) {
+    option (google.api.http) = {
+      get: "/v1/upc/{upc}"
     };
   }
 }
