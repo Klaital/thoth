@@ -54,3 +54,12 @@ FROM card_items ci
 JOIN scryfall_cards sc ON sc.id = ci.scryfall_card_id
 WHERE ci.collection_id = ? AND ci.scryfall_card_id = ? AND ci.foil_treatment = ? AND ci.category = ?
 LIMIT 1;
+
+-- name: SearchCardItemsByOwner :many
+SELECT ci.*, sc.name AS card_name, sc.set_code, sc.collector_number, sc.image_uri, sc.scryfall_uri, sc.prices_json
+FROM card_items ci
+JOIN scryfall_cards sc ON sc.id = ci.scryfall_card_id
+JOIN collections c ON c.id = ci.collection_id
+WHERE c.owner_id = ? AND sc.name LIKE CONCAT('%', sqlc.arg('name_query'), '%')
+ORDER BY ci.collection_id, sc.name
+LIMIT 1000;

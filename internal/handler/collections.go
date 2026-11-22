@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -190,6 +191,40 @@ func (h *CollectionHandler) DeleteCollection(ctx context.Context, req *thothv1.D
 		return nil, status.Error(codes.Internal, "failed to delete collection")
 	}
 	return &thothv1.DeleteCollectionResponse{}, nil
+}
+
+// likeEscaper escapes LIKE wildcards so user input matches literally.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+func (h *CollectionHandler) SearchCollectionCards(ctx context.Context, req *thothv1.SearchCollectionCardsRequest) (*thothv1.SearchCollectionCardsResponse, error) {
+	userID, err := auth.UserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "not authenticated")
+	}
+	query := strings.TrimSpace(req.Query)
+	if query == "" {
+		return &thothv1.SearchCollectionCardsResponse{}, nil
+	}
+
+	rows, err := h.queries.SearchCardItemsByOwner(ctx, db.SearchCardItemsByOwnerParams{
+		OwnerID:   uint64(userID),
+		NameQuery: likeEscaper.Replace(query),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to search cards")
+	}
+
+	// Rows are ordered by collection, so consecutive rows share a group.
+	var matches []*thothv1.CollectionCardMatches
+	for _, r := range rows {
+		item := model.CardItemToProto(model.CardItemFromDB(db.ListCardItemsByCollectionRow(r)))
+		if n := len(matches); n == 0 || matches[n-1].CollectionId != item.CollectionId {
+			matches = append(matches, &thothv1.CollectionCardMatches{CollectionId: item.CollectionId})
+		}
+		last := matches[len(matches)-1]
+		last.Items = append(last.Items, item)
+	}
+	return &thothv1.SearchCollectionCardsResponse{Matches: matches}, nil
 }
 
 // authorizeRead returns an error if the caller may not view the collection.

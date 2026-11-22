@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"log"
 	"os"
 	"path/filepath"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
+	"github.com/klaital/thoth/internal/db"
 	"github.com/klaital/thoth/internal/scryfall"
 )
 
@@ -22,16 +21,13 @@ func main() {
 
 	dsn := mustEnv("DB_DSN")
 
-	db, err := sql.Open("mysql", dsn)
+	sqlDB, err := db.Connect(context.Background(), dsn)
 	if err != nil {
-		log.Fatalf("opening DB: %v", err)
-	}
-	defer db.Close()
-	if err := db.Ping(); err != nil {
 		log.Fatalf("connecting to DB: %v", err)
 	}
+	defer sqlDB.Close()
 
-	syncer := scryfall.NewSyncer(db, *cacheDir)
+	syncer := scryfall.NewSyncer(sqlDB, *cacheDir)
 	stats, err := syncer.Sync(context.Background())
 	if err != nil {
 		log.Fatalf("sync failed: %v", err)

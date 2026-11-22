@@ -285,6 +285,31 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   transition: border-color 0.15s;
 }
 .collection-card:hover { border-color: var(--accent); text-decoration: none; color: var(--text); }
+.collection-card-dimmed { opacity: 0.35; filter: grayscale(1); }
+.collection-card-dimmed:hover { opacity: 0.6; }
+.collection-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.collection-search input { flex: 1; max-width: 420px; }
+.collection-search-status { color: var(--text-muted); font-size: 13px; }
+.search-matches {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.search-matches li { display: flex; gap: 6px; align-items: baseline; }
+.search-match-qty { color: var(--text-muted); min-width: 2.5em; text-align: right; }
+.search-match-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-match-meta { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.search-match-more { color: var(--text-muted); font-style: italic; }
 .collection-card h2 { margin: 0; font-size: 16px; font-weight: 600; }
 .collection-card .card-desc {
   color: var(--text-muted);

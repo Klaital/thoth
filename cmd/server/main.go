@@ -64,14 +64,11 @@ func main() {
 	googleRedir := mustEnv("GOOGLE_REDIRECT_URL")
 	goupcKey    := os.Getenv("GOUPC_API_KEY") // optional; UPC lookups disabled if empty
 
-	sqlDB, err := sql.Open("mysql", dsn)
+	sqlDB, err := db.Connect(context.Background(), dsn)
 	if err != nil {
-		log.Fatalf("opening DB: %v", err)
+		log.Fatalf("connecting to DB: %v", err)
 	}
 	defer sqlDB.Close()
-	if err := sqlDB.Ping(); err != nil {
-		log.Fatalf("pinging DB: %v", err)
-	}
 	if err := runMigrations(dsn); err != nil {
 		log.Fatalf("running migrations: %v", err)
 	}

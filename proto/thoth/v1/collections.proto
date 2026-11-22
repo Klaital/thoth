@@ -4,6 +4,7 @@ package thoth.v1;
 
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
+import "thoth/v1/card_items.proto";
 
 option go_package = "github.com/klaital/thoth/internal/gen/thoth/v1;thothv1";
 
@@ -100,6 +101,22 @@ message RemoveCollectionItemsRequest {
 
 message RemoveCollectionItemsResponse {}
 
+message SearchCollectionCardsRequest {
+  // Case-insensitive substring of the card name.
+  string query = 1;
+}
+
+message CollectionCardMatches {
+  int64 collection_id = 1;
+  repeated CardItem items = 2;
+}
+
+message SearchCollectionCardsResponse {
+  // Only collections with at least one match are included. Searches the
+  // authenticated user's collections; capped at 1000 matching items.
+  repeated CollectionCardMatches matches = 1;
+}
+
 service CollectionService {
   rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse) {
     option (google.api.http) = {
@@ -144,6 +161,12 @@ service CollectionService {
     option (google.api.http) = {
       post: "/v1/collections/{collection_id}/remove-items"
       body: "*"
+    };
+  }
+
+  rpc SearchCollectionCards(SearchCollectionCardsRequest) returns (SearchCollectionCardsResponse) {
+    option (google.api.http) = {
+      get: "/v1/search/cards"
     };
   }
 }

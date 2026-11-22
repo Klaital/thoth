@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../api/auth";
-import { Collection, COLLECTION_TYPE_LABELS, collectionTypeBadgeClass } from "../api/types";
+import {
+  CardItem,
+  Collection,
+  COLLECTION_TYPE_LABELS,
+  collectionTypeBadgeClass,
+  FOIL_TREATMENT_LABELS,
+} from "../api/types";
 import AppLayout from "../components/AppLayout";
 import CommanderSummary from "../components/CommanderSummary";
 
@@ -15,6 +21,39 @@ export default function CollectionsPage() {
       .then((data) => setCollections(data.collections ?? []))
       .finally(() => setLoading(false));
   }, []);
+
+  const [query, setQuery] = useState("");
+  // Matching cards keyed by collection id; null when no search is active.
+  const [matches, setMatches] = useState<Map<string, CardItem[]> | null>(null);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q === "") {
+      setMatches(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      apiFetch(`/v1/search/cards?query=${encodeURIComponent(q)}`, { signal: controller.signal })
+        .then((r) => r.json())
+        .then((data: { matches?: { collectionId: string; items?: CardItem[] }[] }) => {
+          const byCollection = new Map<string, CardItem[]>();
+          for (const m of data.matches ?? []) byCollection.set(m.collectionId, m.items ?? []);
+          setMatches(byCollection);
+          setSearching(false);
+        })
+        .catch((err) => {
+          if (err.name !== "AbortError") setSearching(false);
+        });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query]);
 
   return (
     <AppLayout>
@@ -37,23 +76,76 @@ export default function CollectionsPage() {
             </Link>
           </div>
         ) : (
-          <div className="collection-grid">
-            {collections.map((c) => (
-              <Link key={c.id} to={`/collections/${c.id}`} className="collection-card">
-                <h2>{c.name}</h2>
-                {c.commanders && c.commanders.length > 0 && <CommanderSummary commanders={c.commanders} />}
-                {c.description && <p className="card-desc">{c.description}</p>}
-                <div className="card-meta">
-                  <span className={collectionTypeBadgeClass(c.type)}>
-                    {COLLECTION_TYPE_LABELS[c.type]}
-                  </span>
-                  {c.isPublic && <span className="badge badge-public">Public</span>}
-                </div>
-              </Link>
-            ))}
-          </div>
+          <>
+            <div className="collection-search">
+              <input
+                type="search"
+                placeholder="Search cards across collections…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                aria-label="Search cards by name"
+              />
+              {matches && !searching && (
+                <span className="collection-search-status">
+                  {matches.size === 0
+                    ? "No matching cards"
+                    : `Found in ${matches.size} collection${matches.size === 1 ? "" : "s"}`}
+                </span>
+              )}
+            </div>
+            <div className="collection-grid">
+              {collections.map((c) => {
+                const cardMatches = matches?.get(c.id);
+                const dimmed = matches !== null && !cardMatches;
+                return (
+                  <Link
+                    key={c.id}
+                    to={`/collections/${c.id}`}
+                    className={`collection-card${dimmed ? " collection-card-dimmed" : ""}`}
+                  >
+                    <h2>{c.name}</h2>
+                    {cardMatches && <SearchMatches items={cardMatches} />}
+                    {c.commanders && c.commanders.length > 0 && (
+                      <CommanderSummary commanders={c.commanders} />
+                    )}
+                    {c.description && <p className="card-desc">{c.description}</p>}
+                    <div className="card-meta">
+                      <span className={collectionTypeBadgeClass(c.type)}>
+                        {COLLECTION_TYPE_LABELS[c.type]}
+                      </span>
+                      {c.isPublic && <span className="badge badge-public">Public</span>}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </AppLayout>
+  );
+}
+
+const MAX_MATCHES_SHOWN = 8;
+
+function SearchMatches({ items }: { items: CardItem[] }) {
+  const shown = items.slice(0, MAX_MATCHES_SHOWN);
+  return (
+    <ul className="search-matches">
+      {shown.map((item) => (
+        <li key={item.id}>
+          <span className="search-match-qty">{item.quantity}×</span>
+          <span className="search-match-name">{item.cardName}</span>
+          <span className="search-match-meta">
+            {item.setCode.toUpperCase()}
+            {item.foilTreatment !== "FOIL_TREATMENT_NONFOIL" &&
+              ` · ${FOIL_TREATMENT_LABELS[item.foilTreatment]}`}
+          </span>
+        </li>
+      ))}
+      {items.length > shown.length && (
+        <li className="search-match-more">+{items.length - shown.length} more</li>
+      )}
+    </ul>
   );
 }
