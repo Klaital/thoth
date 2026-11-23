@@ -1,0 +1,30 @@
+{
+  "name": "Thoth's Collection",
+  "dockerComposeFile": ["../compose.yaml", "../compose.override.yaml", "compose.yaml"],
+  "service": "dev",
+  "runServices": ["dev", "db"],
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "remoteUser": "vscode",
+
+  // Vite dev server (proxies /v1 and /auth/google to the API on :8080).
+  "forwardPorts": [5173, 8080],
+  "portsAttributes": {
+    "5173": { "label": "Vite", "onAutoForward": "openBrowser" },
+    "8080": { "label": "API (HTTP gateway)" }
+  },
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "bufbuild.vscode-buf",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  }
+}

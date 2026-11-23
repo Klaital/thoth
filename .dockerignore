@@ -1,0 +1,19 @@
+# Allow-list: only send what the image builds need. This keeps large local
+# files (scryfall dumps, binaries, node_modules) out of the build context.
+*
+!go.mod
+!go.sum
+!cmd/
+!internal/
+!db/
+!proto/
+!frontend/
+!docker/
+
+# Regenerated inside the build
+internal/gen/
+internal/db/*.go
+frontend/src/gen/
+
+frontend/node_modules/
+frontend/dist/

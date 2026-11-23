@@ -1,0 +1,15 @@
+[Unit]
+Description=Thoth's Collection server
+After=network.target
+
+[Service]
+Type=simple
+User=kit
+WorkingDirectory=/home/kit/bin/thoth
+ExecStart=/home/kit/bin/thoth/thoth --http-addr=:8087 --grpc-addr=:9097 --frontend-url=https://thoth.klaital.com
+EnvironmentFile=/home/kit/bin/thoth/.env
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

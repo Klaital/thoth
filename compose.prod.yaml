@@ -1,0 +1,28 @@
+# Production overrides. Images are built by CI and pulled from ECR; nothing is
+# built on the server. The host's nginx (configured by deploy/ansible)
+# terminates TLS on 80/443 and proxies to the web container, which listens on
+# loopback only. Docker-published ports bypass ufw, so keep the 127.0.0.1 bind.
+#
+# Run on the server by thoth-deploy (deploy/ansible/roles/app), from /opt/thoth:
+#
+#   IMAGE_TAG=<git sha> THOTH_ENV_FILE=.env.prod docker compose \
+#     --env-file .env.prod -f compose.yaml -f compose.prod.yaml up -d
+
+services:
+  web:
+    build: !reset null
+    image: ${ECR_REGISTRY:-813809418199.dkr.ecr.us-west-2.amazonaws.com}/thoth/web:${IMAGE_TAG:?IMAGE_TAG is required}
+    ports: !override
+      - "127.0.0.1:${HTTP_PORT:-8080}:80"
+
+  api:
+    build: !reset null
+    image: ${ECR_REGISTRY:-813809418199.dkr.ecr.us-west-2.amazonaws.com}/thoth/api:${IMAGE_TAG:?IMAGE_TAG is required}
+    # OAuth redirects back to the SPA at this URL.
+    command:
+      - --http-addr=:8080
+      - --grpc-addr=:9090
+      - --frontend-url=${FRONTEND_URL:-https://thoth.abandonedfactory.net}
+
+  sync:
+    image: ${ECR_REGISTRY:-813809418199.dkr.ecr.us-west-2.amazonaws.com}/thoth/api:${IMAGE_TAG:?IMAGE_TAG is required}

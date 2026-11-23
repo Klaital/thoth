@@ -1,0 +1,24 @@
+---
+# Configure the Thoth production VPS: host nginx (TLS via certbot) reverse
+# proxying to the docker compose stack, which binds 127.0.0.1:{{ app_port }}.
+#
+#   cd deploy/ansible && ansible-playbook site.yml
+- name: Configure Thoth VPS
+  hosts: thoth
+  become: true
+  pre_tasks:
+    - name: Check required variables
+      ansible.builtin.assert:
+        that:
+          - ansible_host != 'CHANGE_ME'
+          - letsencrypt_email | length > 0
+        fail_msg: Set ansible_host in inventory.ini and letsencrypt_email in group_vars/all.yml.
+    - name: Check OS family
+      ansible.builtin.assert:
+        that: ansible_facts.distribution in ['Debian', 'Ubuntu']
+        fail_msg: This playbook supports Debian and Ubuntu only.
+  roles:
+    - base
+    - docker
+    - nginx
+    - app

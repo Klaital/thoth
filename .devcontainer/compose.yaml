@@ -1,0 +1,33 @@
+# Layered on top of ../compose.yaml and ../compose.override.yaml (which
+# provides the db service) by devcontainer.json. Paths here resolve
+# relative to the repo root (the directory of the first compose file).
+
+services:
+  dev:
+    build:
+      context: .
+      target: dev
+    image: thoth-dev
+    command: sleep infinity
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # The API (make dev) and sync job talk to the compose MySQL. This
+      # overrides any DB_DSN in .env.
+      DB_DSN: ${MYSQL_USER:-thoth}:${MYSQL_PASSWORD:-thoth}@tcp(db:3306)/${MYSQL_DATABASE:-thoth}?parseTime=true
+      # Used by post-create.sh to write ~/.my.cnf so `mysql` needs no flags.
+      MYSQL_USER: ${MYSQL_USER:-thoth}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-thoth}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-thoth}
+    volumes:
+      - .:/workspace:cached
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/home/vscode/.cache
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  go-mod-cache:
+  go-build-cache:

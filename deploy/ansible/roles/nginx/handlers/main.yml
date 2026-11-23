@@ -1,0 +1,13 @@
+---
+# Both listen on "Reload nginx"; handlers run in file order, so a bad config
+# fails the play before nginx is reloaded.
+- name: Validate nginx config
+  ansible.builtin.command: nginx -t
+  changed_when: false
+  listen: Reload nginx
+
+- name: Reload nginx service
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: reloaded
+  listen: Reload nginx

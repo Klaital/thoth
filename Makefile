@@ -1,4 +1,4 @@
-.PHONY: proto sqlc build build-sync frontend lint dev install-tools
+.PHONY: proto sqlc build build-sync frontend lint dev test install-tools up down logs sync deploy provision
 
 BIN     := bin/server
 BIN_SYNC := bin/sync
@@ -47,3 +47,35 @@ dev:
 ## Run tests
 test:
 	go test ./...
+
+## --- Docker --------------------------------------------------------------
+
+COMPOSE      := docker compose
+DEPLOY_HOST  ?= ubuntu@thoth.abandonedfactory.net
+
+## Build and start nginx + api + mysql locally (http://localhost:8080)
+up:
+	$(COMPOSE) up -d --build
+
+down:
+	$(COMPOSE) down
+
+logs:
+	$(COMPOSE) logs -f
+
+## Run the scryfall sync job in a container
+sync:
+	$(COMPOSE) run --rm sync
+
+## Deploy (or roll back to) an already-built release. CI does this on every
+## merge to main; use this for rollbacks. TAG must be a commit whose images CI
+## pushed to ECR. Secrets live in /opt/thoth/.env.prod on the server.
+TAG ?= $(shell git rev-parse HEAD)
+deploy:
+	tar -c compose.yaml compose.prod.yaml | ssh $(DEPLOY_HOST) thoth-deploy $(TAG)
+
+## Configure the VPS (nginx + certbot + Docker) with Ansible.
+## Edit deploy/ansible/inventory.ini and group_vars/all.yml first.
+## Pass extra flags with ANSIBLE_ARGS, e.g. ANSIBLE_ARGS="--check --diff" or "-K".
+provision:
+	cd deploy/ansible && ansible-playbook site.yml $(ANSIBLE_ARGS)
