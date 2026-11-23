@@ -10,10 +10,15 @@
 !frontend/
 !docker/
 
-# Regenerated inside the build
+# Regenerated inside the build (keep in sync with .gitignore). Hand-written
+# files sit next to generated ones, so match generated files explicitly.
 internal/gen/
-internal/db/*.go
-frontend/src/gen/
+internal/db/*.sql.go
+internal/db/db.go
+internal/db/models.go
+internal/db/querier.go
+frontend/src/gen/*
+!frontend/src/gen/google/
 
 frontend/node_modules/
 frontend/dist/
