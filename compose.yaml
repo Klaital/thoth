@@ -1,0 +1,59 @@
+# Thoth's Collection: nginx + API server (+ the scryfall sync job).
+#
+#   docker compose up -d --build          # local, http://localhost:8080
+#   docker compose run --rm sync          # run the scryfall sync job
+#
+# This file is shared by every environment. Local runs also auto-load
+# compose.override.yaml, which adds the MySQL container. Prod uses a hosted
+# database and runs `-f compose.yaml -f compose.prod.yaml` (no override), so
+# DB_DSN in .env.prod points at the provider.
+#
+# Secrets and app config come from .env (see .env.example). Compose also reads
+# .env for the ${VAR} substitutions below.
+
+name: thoth
+
+services:
+  web:
+    build:
+      context: .
+      target: web
+    image: thoth-web
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: .
+      target: api
+    image: thoth-api
+    restart: unless-stopped
+    env_file:
+      - path: ${THOTH_ENV_FILE:-.env}
+        required: false
+    command:
+      - --http-addr=:8080
+      - --grpc-addr=:9090
+      - --frontend-url=${FRONTEND_URL:-http://localhost:8080}
+    volumes:
+      - scryfall-cache:/var/cache/thoth
+    # DB_DSN comes from the env file: locally the db container (see
+    # compose.override.yaml), in prod the hosted database.
+
+  # One-shot scryfall bulk data sync: `docker compose run --rm sync`
+  sync:
+    image: thoth-api
+    profiles: ["tools"]
+    entrypoint: ["/app/sync"]
+    command: ["--cache-dir=/var/cache/thoth"]
+    env_file:
+      - path: ${THOTH_ENV_FILE:-.env}
+        required: false
+    volumes:
+      - scryfall-cache:/var/cache/thoth
+
+volumes:
+  scryfall-cache:

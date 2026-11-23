@@ -6,11 +6,16 @@
 *.out
 vendor/
 
-# Generated
+# Generated (buf + sqlc). List generated files explicitly: hand-written code
+# lives alongside them (internal/db/connect.go, frontend/src/gen/google/).
 internal/gen/
-internal/db/*.go
-!internal/db/queries/
-frontend/src/gen/
+internal/db/*.sql.go
+internal/db/db.go
+internal/db/models.go
+internal/db/querier.go
+# `gen/*` rather than `gen/` so the exception below can apply; git can't
+# re-include files inside an ignored directory.
+frontend/src/gen/*
 !frontend/src/gen/google/
 
 # Frontend

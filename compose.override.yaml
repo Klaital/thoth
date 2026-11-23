@@ -1,0 +1,39 @@
+# Local-only additions, auto-loaded by `docker compose` alongside compose.yaml
+# (and listed explicitly in .devcontainer/devcontainer.json). Prod names its
+# files with -f, so it never loads this: prod uses a hosted database.
+#
+# Point DB_DSN in .env at this container:
+#   thoth:<MYSQL_PASSWORD>@tcp(db:3306)/thoth?parseTime=true
+
+services:
+  api:
+    depends_on:
+      db:
+        condition: service_healthy
+
+  sync:
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-thoth-root}
+      MYSQL_USER: ${MYSQL_USER:-thoth}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-thoth}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-thoth}
+    volumes:
+      - mysqldata:/var/lib/mysql
+    healthcheck:
+      # TCP (not the socket) so it only passes once init is done and the real
+      # server is listening; the entrypoint's temporary server skips networking.
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u $${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  mysqldata:

@@ -1,0 +1,34 @@
+---
+# Public hostname. DNS must point at the VPS before the first run so
+# certbot's HTTP-01 challenge can succeed.
+server_name: thoth.abandonedfactory.net
+
+# Let's Encrypt account email (expiry notices). Required.
+letsencrypt_email: kenkaku@gmail.com
+
+# Set true to test against the Let's Encrypt staging CA (no rate limits,
+# untrusted certs). Delete /etc/letsencrypt/live/<server_name> before
+# switching back.
+letsencrypt_staging: false
+
+# Port the compose `web` container publishes on 127.0.0.1 (HTTP_PORT in .env.prod).
+app_port: 8080
+
+# User that runs `make deploy` over SSH; added to the docker group so
+# DOCKER_HOST=ssh://... works without sudo.
+deploy_user: "{{ ansible_user }}"
+
+# Firewall: allow only SSH, HTTP and HTTPS.
+ufw_enabled: true
+ssh_port: "{{ ansible_port | default(22) }}"
+
+# --- App deploys (roles/app) ---
+# Compose project dir on the server; .env.prod lives here (copy it in by hand).
+app_dir: /opt/thoth
+ecr_registry: 813809418199.dkr.ecr.us-west-2.amazonaws.com
+aws_region: us-west-2
+# Profile in ~{{ deploy_user }}/.aws used to pull from ECR (assumes thoth-ecr-pull).
+ecr_aws_profile: thoth-ecr
+# GitHub Actions' deploy key. It is pinned to thoth-deploy via a forced
+# command, so it can't open a shell. Private half is the DEPLOY_SSH_KEY secret.
+ci_deploy_pubkey: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILkll95gmq9kg4CfLJZWbMKa4ZQ1mahGgKU17gDvmH0b github-actions@Klaital/thoth deploy

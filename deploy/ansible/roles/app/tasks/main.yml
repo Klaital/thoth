@@ -1,0 +1,35 @@
+---
+- name: Create app directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
+    mode: "0750"
+
+- name: Install deploy script
+  ansible.builtin.template:
+    src: thoth-deploy.sh.j2
+    dest: /usr/local/bin/thoth-deploy
+    mode: "0755"
+
+# `restrict` drops pty/forwarding; the forced command means this key can only
+# run thoth-deploy, with the requested git SHA in SSH_ORIGINAL_COMMAND.
+- name: Authorize CI deploy key (forced command)
+  ansible.posix.authorized_key:
+    user: "{{ deploy_user }}"
+    key: "{{ ci_deploy_pubkey }}"
+    key_options: 'restrict,command="/usr/local/bin/thoth-deploy"'
+    state: present
+
+- name: Check for .env.prod
+  ansible.builtin.stat:
+    path: "{{ app_dir }}/.env.prod"
+  register: app_env_file
+
+- name: Remind about .env.prod
+  ansible.builtin.debug:
+    msg: >-
+      {{ app_dir }}/.env.prod is missing; deploys will fail until it exists.
+      Copy it in with: scp .env.prod {{ deploy_user }}@{{ ansible_host }}:{{ app_dir }}/.env.prod
+  when: not app_env_file.stat.exists

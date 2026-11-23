@@ -1,0 +1,17 @@
+# TLS config, rendered by 40-thoth-tls.sh when NGINX_TLS=1.
+# ${SERVER_NAME} and ${TLS_CERT_NAME} are substituted at container start.
+server {
+    listen 80;
+    server_name ${SERVER_NAME};
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name ${SERVER_NAME};
+
+    ssl_certificate     /etc/letsencrypt/live/${TLS_CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${TLS_CERT_NAME}/privkey.pem;
+
+    include /etc/nginx/snippets/thoth-locations.conf;
+}
