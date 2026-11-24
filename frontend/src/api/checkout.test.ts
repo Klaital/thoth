@@ -5,9 +5,10 @@ import {
   groupCheckoutsByCollection,
   initialPicks,
   pullList,
+  rowOwnership,
   validatePicks,
 } from "./checkout";
-import { DeckCheckout, DeckOwnership, OwnedCopy } from "./types";
+import { DeckCard, DeckCheckout, DeckOwnership, OwnedCopy } from "./types";
 
 function copy(id: string, collectionId: string, collectionName: string, extra: Partial<OwnedCopy> = {}): OwnedCopy {
   return {
@@ -84,5 +85,27 @@ describe("check-out helpers", () => {
     expect(describePrinting({ setCode: "mh2", collectorNumber: "259", foilTreatment: "FOIL_TREATMENT_FOIL", language: "ja" }))
       .toBe("MH2 #259 · Foil · Japanese");
     expect(describeLocations(ownership.cards![1])).toBe("Box A ×2 · Box B ×1 · checked out here ×1");
+  });
+});
+
+describe("rowOwnership", () => {
+  const row = (id: string, cardName: string, board: DeckCard["board"], quantity: number): DeckCard =>
+    ({ id, deckId: "1", cardName, board, quantity });
+
+  test("reads each row against its own quantity", () => {
+    const own: DeckOwnership = { cards: [{ cardName: "Sol Ring", needed: 1, free: 1 }] };
+    const cards = [row("1", "Sol Ring", "DECK_BOARD_MAIN", 1)];
+    expect(rowOwnership(cards, own).get("1")).toEqual({ checkedOut: 0, inCollection: 1, missing: 0 });
+
+    const out: DeckOwnership = { cards: [{ cardName: "Sol Ring", needed: 1, checkedOutHere: 1 }] };
+    expect(rowOwnership(cards, out).get("1")).toEqual({ checkedOut: 1, inCollection: 0, missing: 0 });
+  });
+
+  test("splits a name on several boards, checked-out copies to the first board", () => {
+    const own: DeckOwnership = { cards: [{ cardName: "Sol Ring", needed: 3, checkedOutHere: 1, free: 1, missing: 1 }] };
+    const cards = [row("side", "Sol Ring", "DECK_BOARD_SIDEBOARD", 1), row("main", "Sol Ring", "DECK_BOARD_MAIN", 2)];
+    const got = rowOwnership(cards, own);
+    expect(got.get("main")).toEqual({ checkedOut: 1, inCollection: 1, missing: 0 });
+    expect(got.get("side")).toEqual({ checkedOut: 0, inCollection: 0, missing: 1 });
   });
 });

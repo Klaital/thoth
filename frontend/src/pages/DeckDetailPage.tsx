@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiFetch, parseUserId } from "../api/auth";
 import { Deck, DeckBoard, DeckCard, DeckCardOwnership, DeckOwnership, DECK_BOARD_LABELS, DECK_BOARD_OPTIONS } from "../api/types";
 import { describeDeckLine } from "../api/deckText";
-import { describeLocations } from "../api/checkout";
+import { RowOwnership, describeLocations, rowOwnership } from "../api/checkout";
 import { errorMessage } from "../api/errors";
 import AppLayout from "../components/AppLayout";
 import BulkImportForm from "../components/BulkImportForm";
@@ -108,7 +108,8 @@ export default function DeckDetailPage() {
   const ownershipByName = new Map((ownership?.cards ?? []).map((o) => [o.cardName, o]));
   const totalMissing = ownership?.totalMissing ?? 0;
   const totalCheckedOut = ownership?.totalCheckedOut ?? 0;
-  const shown = missingOnly ? cards.filter((c) => (ownershipByName.get(c.cardName)?.missing ?? 0) > 0) : cards;
+  const byRow = ownership ? rowOwnership(cards, ownership) : new Map<string, RowOwnership>();
+  const shown = missingOnly ? cards.filter((c) => (byRow.get(c.id)?.missing ?? 0) > 0) : cards;
 
   return (
     <AppLayout>
@@ -188,6 +189,7 @@ export default function DeckDetailPage() {
                       card={card}
                       isOwner={isOwner}
                       ownership={isOwner ? ownershipByName.get(card.cardName) : undefined}
+                      rowOwnership={isOwner ? byRow.get(card.id) : undefined}
                       onQuantityChange={handleQuantityChange}
                       onBoardChange={handleBoardChange}
                       onRemove={handleRemove}
@@ -392,10 +394,11 @@ function AddDeckCardForm({ deckId, onAdded }: { deckId: string; onAdded: () => P
   );
 }
 
-function DeckCardRow({ card, isOwner, ownership, onQuantityChange, onBoardChange, onRemove }: {
+function DeckCardRow({ card, isOwner, ownership, rowOwnership, onQuantityChange, onBoardChange, onRemove }: {
   card: DeckCard;
   isOwner: boolean;
   ownership?: DeckCardOwnership;
+  rowOwnership?: RowOwnership;
   onQuantityChange: (id: string, delta: 1 | -1) => void;
   onBoardChange: (id: string, board: DeckBoard) => void;
   onRemove: (id: string) => void;
@@ -420,7 +423,7 @@ function DeckCardRow({ card, isOwner, ownership, onQuantityChange, onBoardChange
           <span className="item-meta ownership-locations">{describeLocations(ownership)}</span>
         )}
       </div>
-      {ownership && <OwnershipBadge ownership={ownership} />}
+      {rowOwnership && <OwnershipBadge quantity={card.quantity} row={rowOwnership} />}
       {isOwner && (
         <select
           className="category-select"
@@ -446,17 +449,18 @@ function DeckCardRow({ card, isOwner, ownership, onQuantityChange, onBoardChange
   );
 }
 
-// "3/4": copies available to the deck (checked out to it or free in a
-// collection) out of the copies it needs, across all boards.
-function OwnershipBadge({ ownership }: { ownership: DeckCardOwnership }) {
-  const needed = ownership.needed ?? 0;
-  const missing = ownership.missing ?? 0;
-  const have = needed - missing;
-  const cls = missing === 0 ? "ownership-ok" : have > 0 ? "ownership-partial" : "ownership-missing";
-  const title = missing === 0 ? "You own enough copies" : `${missing} missing`;
+// "1/2 checked out": copies of this row pulled from collections out of the
+// copies it lists. Amber while owned copies are still in their boxes, red
+// when some aren't owned (or are checked out to other decks).
+function OwnershipBadge({ quantity, row }: { quantity: number; row: RowOwnership }) {
+  const cls = row.missing > 0 ? "ownership-missing" : row.checkedOut < quantity ? "ownership-partial" : "ownership-ok";
+  const parts = [`${row.checkedOut} checked out`];
+  if (row.inCollection > 0) parts.push(`${row.inCollection} in your collections`);
+  if (row.missing > 0) parts.push(`${row.missing} missing`);
   return (
-    <span className={`ownership-badge ${cls}`} title={title} aria-label={`Owned ${have} of ${needed}`}>
-      {have}/{needed}
+    <span className={`ownership-badge ${cls}`} title={parts.join(", ")}>
+      {row.checkedOut}/{quantity} checked out
+      {row.missing > 0 && <> · {row.missing} missing</>}
     </span>
   );
 }

@@ -1,4 +1,6 @@
 import {
+  DECK_BOARD_OPTIONS,
+  DeckCard,
   DeckCardOwnership,
   DeckCheckout,
   DeckOwnership,
@@ -10,6 +12,35 @@ import {
 
 // Copies to pull for a check-out, keyed by collection card id.
 export type PickQuantities = Record<string, number>;
+
+// Where one deck row's copies are: checked out to the deck, still in a
+// collection, or not owned. Adds up to the row's quantity.
+export interface RowOwnership {
+  checkedOut: number;
+  inCollection: number;
+  missing: number;
+}
+
+// Ownership is per card name, but a name can sit on several boards. Split it
+// across the rows in board order, checked-out copies first, so each row reads
+// against its own quantity rather than the name's total.
+export function rowOwnership(cards: DeckCard[], ownership: DeckOwnership): Map<string, RowOwnership> {
+  const pools = new Map((ownership.cards ?? []).map((o) => [
+    o.cardName,
+    { checkedOut: o.checkedOutHere ?? 0, inCollection: o.free ?? 0 },
+  ]));
+  const rows = [...cards].sort((a, b) => DECK_BOARD_OPTIONS.indexOf(a.board) - DECK_BOARD_OPTIONS.indexOf(b.board));
+  const result = new Map<string, RowOwnership>();
+  for (const card of rows) {
+    const pool = pools.get(card.cardName) ?? { checkedOut: 0, inCollection: 0 };
+    const checkedOut = Math.min(card.quantity, pool.checkedOut);
+    const inCollection = Math.min(card.quantity - checkedOut, pool.inCollection);
+    pool.checkedOut -= checkedOut;
+    pool.inCollection -= inCollection;
+    result.set(card.id, { checkedOut, inCollection, missing: card.quantity - checkedOut - inCollection });
+  }
+  return result;
+}
 
 // Copies the deck still needs pulled for this card.
 export function stillNeeded(card: DeckCardOwnership): number {
