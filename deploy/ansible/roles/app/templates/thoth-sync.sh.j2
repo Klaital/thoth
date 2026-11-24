@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+#
+# Run the scryfall bulk data sync against prod, using the currently deployed
+# api image (tag from {{ app_dir }}/DEPLOYED, written by thoth-deploy) and the
+# same .env.prod as the api service. Scheduled nightly by cron (roles/app).
+#
+#   thoth-sync          # run it by hand on the host
+set -euo pipefail
+
+cd {{ app_dir }}
+exec 9>.sync.lock
+flock -n 9 || { echo "another sync is running" >&2; exit 1; }
+
+if [[ ! -f .env.prod ]]; then
+    echo "{{ app_dir }}/.env.prod is missing" >&2
+    exit 1
+fi
+if [[ ! -s DEPLOYED ]]; then
+    echo "{{ app_dir }}/DEPLOYED is missing; deploy a release first" >&2
+    exit 1
+fi
+
+export IMAGE_TAG="$(< DEPLOYED)" THOTH_ENV_FILE=.env.prod
+echo "==> Syncing scryfall data with thoth/api:$IMAGE_TAG"
+exec docker compose --env-file .env.prod -f compose.yaml -f compose.prod.yaml \
+    run --rm -T sync

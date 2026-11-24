@@ -15,6 +15,22 @@
 
 # `restrict` drops pty/forwarding; the forced command means this key can only
 # run thoth-deploy, with the requested git SHA in SSH_ORIGINAL_COMMAND.
+- name: Install scryfall sync script
+  ansible.builtin.template:
+    src: thoth-sync.sh.j2
+    dest: /usr/local/bin/thoth-sync
+    mode: "0755"
+
+# Runs as the deploy user (docker group) in the host's timezone. Output goes
+# to syslog: `journalctl -t thoth-sync`.
+- name: Schedule nightly scryfall sync
+  ansible.builtin.cron:
+    name: thoth scryfall sync
+    user: "{{ deploy_user }}"
+    minute: "{{ sync_cron_minute }}"
+    hour: "{{ sync_cron_hour }}"
+    job: "/usr/local/bin/thoth-sync 2>&1 | logger -t thoth-sync"
+
 - name: Authorize CI deploy key (forced command)
   ansible.posix.authorized_key:
     user: "{{ deploy_user }}"
