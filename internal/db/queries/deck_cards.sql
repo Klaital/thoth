@@ -58,3 +58,8 @@ SELECT dc.*,
 FROM deck_cards dc
 LEFT JOIN scryfall_cards pc ON pc.id = dc.preferred_scryfall_card_id
 WHERE dc.id = ?;
+
+-- name: GetCanonicalCardNames :many
+-- Batch form of GetCanonicalCardName: the names, as Scryfall spells them,
+-- that case-insensitively equal one of the inputs.
+SELECT DISTINCT name FROM scryfall_cards WHERE name IN (sqlc.slice('names'));

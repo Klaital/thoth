@@ -129,6 +129,37 @@ func TestCollectionsAndCardsIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("re-adding a card keeps its notes unless new ones are given", func(t *testing.T) {
+		binder := must[*thothv1.CreateCollectionResponse](t)(colls.CreateCollection(as(alice), &thothv1.CreateCollectionRequest{
+			Name: "Notes binder", Type: thothv1.CollectionType_COLLECTION_TYPE_MTG_CARDS,
+		})).Collection
+		addSol := func(t *testing.T, notes string) *thothv1.CardItem {
+			t.Helper()
+			return must[*thothv1.AddCardItemResponse](t)(cards.AddCardItem(as(alice), &thothv1.AddCardItemRequest{
+				CollectionId: binder.Id, ScryfallCardId: "sol-c21", Quantity: 1, Notes: notes,
+			})).Item
+		}
+
+		if got := addSol(t, "page 3").Notes; got != "page 3" {
+			t.Fatalf("new card notes = %q, want %q", got, "page 3")
+		}
+		if got := addSol(t, "").Notes; got != "page 3" {
+			t.Errorf("notes after re-add without notes = %q, want kept", got)
+		}
+
+		stream := &fakeStream[thothv1.BulkImportCardLineResult]{ctx: as(alice)}
+		if err := cards.BulkImportCardItems(&thothv1.BulkImportCardItemsRequest{CollectionId: binder.Id, Text: "1 Sol Ring (C21) 263\n"}, stream); err != nil {
+			t.Fatal(err)
+		}
+		if r := stream.sent[0]; r.Item == nil || r.Item.Notes != "page 3" || r.Item.Quantity != 3 {
+			t.Errorf("after bulk re-import: item %v, want notes kept and qty 3", r.Item)
+		}
+
+		if got := addSol(t, "page 4").Notes; got != "page 4" {
+			t.Errorf("notes after re-add with new notes = %q, want %q", got, "page 4")
+		}
+	})
+
 	t.Run("listing cards enforces read access", func(t *testing.T) {
 		_, err := cards.ListCardItems(as(bob), &thothv1.ListCardItemsRequest{CollectionId: box.Id})
 		wantCode(t, err, codes.NotFound)
@@ -234,6 +265,66 @@ func TestCollectionsAndCardsIntegration(t *testing.T) {
 		err := cards.BulkImportCardItems(&thothv1.BulkImportCardItemsRequest{CollectionId: imp.Id, Text: text, Language: "german"},
 			&fakeStream[thothv1.BulkImportCardLineResult]{ctx: as(alice)})
 		wantCode(t, err, codes.InvalidArgument)
+	})
+
+	t.Run("bulk import batches printings and merges repeats", func(t *testing.T) {
+		imp := must[*thothv1.CreateCollectionResponse](t)(colls.CreateCollection(as(alice), &thothv1.CreateCollectionRequest{
+			Name: "Batched box", Type: thothv1.CollectionType_COLLECTION_TYPE_MTG_CARDS,
+		})).Collection
+		// A German Sol Ring already in the collection must stay a separate row.
+		de := "1 Sol Ring (C21) 263\n"
+		if err := cards.BulkImportCardItems(&thothv1.BulkImportCardItemsRequest{CollectionId: imp.Id, Text: de, Language: "de"},
+			&fakeStream[thothv1.BulkImportCardLineResult]{ctx: as(alice)}); err != nil {
+			t.Fatal(err)
+		}
+
+		text := "1 Sol Ring (c21) 263\n" +
+			"1 Sol Ring (C21) 263 *F*\n" +
+			"2 sol ring (C21) 263\n" +
+			"1 Black Lotus (LEA) 232\n" +
+			"1 City of Brass (C21) 263\n" +
+			"not a card line\n"
+		stream := &fakeStream[thothv1.BulkImportCardLineResult]{ctx: as(alice)}
+		if err := cards.BulkImportCardItems(&thothv1.BulkImportCardItemsRequest{CollectionId: imp.Id, Text: text}, stream); err != nil {
+			t.Fatal(err)
+		}
+		// Each added line echoes its stored row, so merged lines show the
+		// total: three nonfoil lines (one with a name warning) make 4.
+		type result struct {
+			qty           int32
+			foil          bool
+			warning, fail bool
+		}
+		want := []result{
+			{4, false, false, false},
+			{1, true, false, false},
+			{4, false, false, false},
+			{0, false, false, true},
+			{4, false, true, false},
+			{0, false, false, true},
+		}
+		if len(stream.sent) != len(want) {
+			t.Fatalf("got %d results, want %d: %v", len(stream.sent), len(want), stream.sent)
+		}
+		for i, w := range want {
+			r := stream.sent[i]
+			got := result{warning: r.Warning != "", fail: r.Error != ""}
+			if r.Item != nil {
+				if r.Item.Language != "en" {
+					t.Errorf("result %d language = %q, want en", i, r.Item.Language)
+				}
+				got.qty = r.Item.Quantity
+				got.foil = r.Item.FoilTreatment == thothv1.FoilTreatment_FOIL_TREATMENT_FOIL
+			}
+			if got != w {
+				t.Errorf("result %d = %+v (warning %q, error %q), want %+v", i, got, r.Warning, r.Error, w)
+			}
+		}
+
+		listed := must[*thothv1.ListCardItemsResponse](t)(cards.ListCardItems(as(alice), &thothv1.ListCardItemsRequest{CollectionId: imp.Id}))
+		if len(listed.Items) != 3 {
+			t.Errorf("collection has %d rows, want 3 (de, en nonfoil, en foil): %v", len(listed.Items), listed.Items)
+		}
 	})
 }
 
@@ -411,6 +502,52 @@ func TestDecksIntegration(t *testing.T) {
 		}
 		if stream.sent[0].Card.PreferredScryfallCardId != "atx-c16" {
 			t.Errorf("Moxfield line printing = %q, want atx-c16", stream.sent[0].Card.PreferredScryfallCardId)
+		}
+	})
+
+	t.Run("bulk import batches names and merges repeats", func(t *testing.T) {
+		fresh := must[*thothv1.CreateDeckResponse](t)(decks.CreateDeck(as(alice), &thothv1.CreateDeckRequest{Name: "Batched"})).Deck
+		// Case-folded names, a double-faced front name (the one-at-a-time
+		// fallback), and repeats that merge into one row per name and board.
+		text := "1 sol ring\n" +
+			"1 Delver of Secrets\n" +
+			"2 Sol Ring\n" +
+			"1 Swords to Plowshares (STA) 10\n" +
+			"1 swords to plowshares\n"
+		stream := &fakeStream[thothv1.BulkImportDeckCardLineResult]{ctx: as(alice)}
+		if err := decks.BulkImportDeckCards(&thothv1.BulkImportDeckCardsRequest{DeckId: fresh.Id, Text: text}, stream); err != nil {
+			t.Fatal(err)
+		}
+		// Each line echoes the stored row, so merged lines show the total.
+		want := []struct {
+			name string
+			qty  int32
+		}{
+			{"Sol Ring", 3},
+			{"Delver of Secrets // Insectile Aberration", 1},
+			{"Sol Ring", 3},
+			{"Swords to Plowshares", 2},
+			{"Swords to Plowshares", 2},
+		}
+		if len(stream.sent) != len(want) {
+			t.Fatalf("got %d results, want %d: %v", len(stream.sent), len(want), stream.sent)
+		}
+		for i, w := range want {
+			r := stream.sent[i]
+			if r.Error != "" || r.Warning != "" || r.Card == nil {
+				t.Errorf("result %d: error %q, warning %q, card %v", i, r.Error, r.Warning, r.Card)
+				continue
+			}
+			if r.Card.CardName != w.name || r.Card.Quantity != w.qty {
+				t.Errorf("result %d = %q x%d, want %q x%d", i, r.Card.CardName, r.Card.Quantity, w.name, w.qty)
+			}
+		}
+		if got := stream.sent[3].Card.PreferredScryfallCardId; got != "stp-sta" {
+			t.Errorf("Moxfield line printing = %q, want stp-sta", got)
+		}
+		cards := must[*thothv1.ListDeckCardsResponse](t)(decks.ListDeckCards(as(alice), &thothv1.ListDeckCardsRequest{DeckId: fresh.Id})).Cards
+		if len(cards) != 3 {
+			t.Errorf("deck has %d cards, want 3: %v", len(cards), cards)
 		}
 	})
 

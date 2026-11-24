@@ -15,11 +15,13 @@ WHERE ci.collection_id = ?
 ORDER BY sc.name;
 
 -- name: UpsertCardItem :execresult
+-- Adding to an existing row adds to its quantity. Notes are replaced only
+-- when new ones are given: NULL or empty notes keep the row's notes.
 INSERT INTO collection_cards (collection_id, scryfall_card_id, foil_treatment, language, quantity, notes)
 VALUES (?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
   quantity = quantity + VALUES(quantity),
-  notes = VALUES(notes);
+  notes = COALESCE(NULLIF(VALUES(notes), ''), notes);
 
 -- name: UpdateCardItem :exec
 UPDATE collection_cards SET quantity = ?, notes = ?, language = ?
@@ -50,6 +52,13 @@ FROM collection_cards ci
 JOIN scryfall_cards sc ON sc.id = ci.scryfall_card_id
 WHERE ci.collection_id = ? AND ci.scryfall_card_id = ? AND ci.foil_treatment = ? AND ci.language = ?
 LIMIT 1;
+
+-- name: ListCardItemsByCollectionAndCards :many
+-- The collection's rows for the given printings, in any finish or language.
+SELECT ci.*, sc.name AS card_name, sc.set_code, sc.collector_number, sc.image_uri, sc.scryfall_uri, sc.prices_json
+FROM collection_cards ci
+JOIN scryfall_cards sc ON sc.id = ci.scryfall_card_id
+WHERE ci.collection_id = ? AND ci.scryfall_card_id IN (sqlc.slice('scryfall_card_ids'));
 
 -- name: SearchCardItemsByOwner :many
 SELECT ci.*, sc.name AS card_name, sc.set_code, sc.collector_number, sc.image_uri, sc.scryfall_uri, sc.prices_json
