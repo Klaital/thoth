@@ -13,6 +13,8 @@
   "dependencies": {
     "@buf/googleapis_googleapis.bufbuild_es": "^2.16.0-20260414192239-c17df5b2beca.1",
     "@bufbuild/protobuf": "^2.16.0",
+    "@grafana/faro-web-sdk": "^2.15.0",
+    "@grafana/faro-web-tracing": "^2.15.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.0"

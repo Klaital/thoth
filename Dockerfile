@@ -128,7 +128,12 @@ COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY frontend/ ./
 COPY --from=codegen /src/frontend/src/gen/ src/gen/
-RUN npm run build
+# Frontend telemetry (Grafana Faro). Empty URL = telemetry compiled out.
+ARG VITE_FARO_URL=""
+ARG VITE_APP_VERSION=""
+ARG VITE_APP_ENV=""
+RUN VITE_FARO_URL="$VITE_FARO_URL" VITE_APP_VERSION="$VITE_APP_VERSION" \
+    VITE_APP_ENV="$VITE_APP_ENV" npm run build
 
 # ---------------------------------------------------------------------------
 # Frontend checks (CI): `docker buildx build --target test-web .`

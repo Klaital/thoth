@@ -13,6 +13,7 @@ import (
 	"github.com/klaital/thoth/internal/auth"
 	"github.com/klaital/thoth/internal/db"
 	"github.com/klaital/thoth/internal/model"
+	"github.com/klaital/thoth/internal/telemetry"
 )
 
 const stateCookie = "oauth_state"
@@ -54,6 +55,7 @@ func (h *OAuthHandlers) Callback(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: stateCookie, Path: "/", MaxAge: -1})
 
 	info, err := h.google.ExchangeCode(r.Context(), r.URL.Query().Get("code"))
+	defer func() { telemetry.RecordLogin(r.Context(), "google", err) }()
 	if err != nil {
 		log.Printf("google oauth exchange: %v", err)
 		http.Error(w, "oauth failed", http.StatusBadGateway)

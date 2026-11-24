@@ -11,6 +11,7 @@ import (
 	"github.com/klaital/thoth/internal/db"
 	thothv1 "github.com/klaital/thoth/internal/gen/thoth/v1"
 	"github.com/klaital/thoth/internal/model"
+	"github.com/klaital/thoth/internal/telemetry"
 )
 
 // maxBulkImportLines caps a single import so one request can't issue an
@@ -138,6 +139,7 @@ func (h *SealedItemHandler) BulkImportSealedItems(ctx context.Context, req *thot
 			} else {
 				res.Item = item
 			}
+			telemetry.RecordBulkLine(ctx, "sealed", res.Error == "")
 		}
 	}
 

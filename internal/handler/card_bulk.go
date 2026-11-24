@@ -14,6 +14,7 @@ import (
 	"github.com/klaital/thoth/internal/db"
 	thothv1 "github.com/klaital/thoth/internal/gen/thoth/v1"
 	"github.com/klaital/thoth/internal/model"
+	"github.com/klaital/thoth/internal/telemetry"
 )
 
 // moxfieldLine matches Moxfield's text export format:
@@ -138,6 +139,7 @@ func (h *CardItemHandler) BulkImportCardItems(req *thothv1.BulkImportCardItemsRe
 		}
 		res := h.importCardLine(ctx, uint64(req.CollectionId), lang, line)
 		res.LineNumber = int32(i + 1)
+		telemetry.RecordBulkLine(ctx, "card", res.Error == "")
 		if err := stream.Send(res); err != nil {
 			return err
 		}
@@ -173,6 +175,7 @@ func (h *CardItemHandler) importCardLine(ctx context.Context, collectionID uint6
 		res.Error = "failed to add card"
 		return res
 	}
+	telemetry.CardsAdded.Add(ctx, int64(parsed.Quantity), telemetry.SourceBulk)
 	row, err := h.queries.GetCardItemByKey(ctx, db.GetCardItemByKeyParams{
 		CollectionID:   collectionID,
 		ScryfallCardID: card.ID,

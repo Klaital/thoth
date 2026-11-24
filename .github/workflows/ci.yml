@@ -108,6 +108,12 @@ jobs:
           push: true
           # Single-manifest images keep the ECR repos free of attestation entries.
           provenance: false
+          # Only the web-build stage uses these. VITE_FARO_URL is a public
+          # collector URL (it ships in the JS bundle), so a repo variable.
+          build-args: |
+            VITE_FARO_URL=${{ vars.VITE_FARO_URL }}
+            VITE_APP_VERSION=${{ github.sha }}
+            VITE_APP_ENV=prod
           tags: |
             ${{ steps.ecr.outputs.registry }}/thoth/${{ matrix.target }}:${{ github.sha }}
             ${{ steps.ecr.outputs.registry }}/thoth/${{ matrix.target }}:latest

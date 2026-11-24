@@ -15,6 +15,7 @@ import (
 	"github.com/klaital/thoth/internal/db"
 	thothv1 "github.com/klaital/thoth/internal/gen/thoth/v1"
 	"github.com/klaital/thoth/internal/model"
+	"github.com/klaital/thoth/internal/telemetry"
 )
 
 // deckNameLine matches a deck list line that names a card without a printing:
@@ -92,6 +93,7 @@ func (h *DeckHandler) BulkImportDeckCards(req *thothv1.BulkImportDeckCardsReques
 		}
 		res := h.importDeckLine(ctx, uint64(req.DeckId), board, line)
 		res.LineNumber = int32(i + 1)
+		telemetry.RecordBulkLine(ctx, "deck", res.Error == "")
 		if err := stream.Send(res); err != nil {
 			return err
 		}

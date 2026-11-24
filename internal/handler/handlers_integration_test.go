@@ -80,7 +80,7 @@ func (f *fakeStream[T]) Send(m *T) error         { f.sent = append(f.sent, m); r
 func TestCollectionsAndCardsIntegration(t *testing.T) {
 	sqlDB, q := fixture(t)
 	colls := NewCollectionHandler(sqlDB, q)
-	cards := NewCardItemHandler(q)
+	cards := NewCardItemHandler(sqlDB, q)
 
 	// Default collection is created on first listing, exactly once.
 	list := must[*thothv1.ListCollectionsResponse](t)(colls.ListCollections(as(alice), &thothv1.ListCollectionsRequest{}))
@@ -238,8 +238,8 @@ func TestCollectionsAndCardsIntegration(t *testing.T) {
 }
 
 func TestDecksIntegration(t *testing.T) {
-	_, q := fixture(t)
-	decks := NewDeckHandler(q)
+	sqlDB, q := fixture(t)
+	decks := NewDeckHandler(sqlDB, q)
 
 	_, err := decks.CreateDeck(as(alice), &thothv1.CreateDeckRequest{Name: "  "})
 	wantCode(t, err, codes.InvalidArgument)
@@ -422,5 +422,189 @@ func TestDecksIntegration(t *testing.T) {
 		if err != nil || len(cards) != 0 {
 			t.Errorf("deck cards after delete = %d (err %v)", len(cards), err)
 		}
+	})
+}
+
+func TestDeckCheckoutIntegration(t *testing.T) {
+	sqlDB, q := fixture(t)
+	colls := NewCollectionHandler(sqlDB, q)
+	cards := NewCardItemHandler(sqlDB, q)
+	decks := NewDeckHandler(sqlDB, q)
+
+	newBox := func(owner int64, name string) int64 {
+		return must[*thothv1.CreateCollectionResponse](t)(colls.CreateCollection(as(owner), &thothv1.CreateCollectionRequest{
+			Name: name, Type: thothv1.CollectionType_COLLECTION_TYPE_MTG_CARDS,
+		})).Collection.Id
+	}
+	addCard := func(coll int64, printing string, foil thothv1.FoilTreatment, lang string, qty int32) int64 {
+		return must[*thothv1.AddCardItemResponse](t)(cards.AddCardItem(as(alice), &thothv1.AddCardItemRequest{
+			CollectionId: coll, ScryfallCardId: printing, FoilTreatment: foil, Language: lang, Quantity: qty,
+		})).Item.Id
+	}
+	newDeck := func(owner int64, name string, cardsByBoard map[thothv1.DeckBoard]map[string]int32) int64 {
+		id := must[*thothv1.CreateDeckResponse](t)(decks.CreateDeck(as(owner), &thothv1.CreateDeckRequest{Name: name})).Deck.Id
+		for board, byName := range cardsByBoard {
+			for n, qty := range byName {
+				must[*thothv1.AddDeckCardResponse](t)(decks.AddDeckCard(as(owner), &thothv1.AddDeckCardRequest{
+					DeckId: id, CardName: n, Board: board, Quantity: qty,
+				}))
+			}
+		}
+		return id
+	}
+	ownership := func(deck int64) map[string]*thothv1.DeckCardOwnership {
+		res := must[*thothv1.GetDeckOwnershipResponse](t)(decks.GetDeckOwnership(as(alice), &thothv1.GetDeckOwnershipRequest{DeckId: deck}))
+		out := map[string]*thothv1.DeckCardOwnership{}
+		for _, c := range res.Cards {
+			out[c.CardName] = c
+		}
+		out[""] = &thothv1.DeckCardOwnership{Missing: res.TotalMissing, CheckedOutHere: res.TotalCheckedOut}
+		return out
+	}
+	checkouts := func(coll int64) map[int64][]*thothv1.CardCheckout {
+		res := must[*thothv1.ListCardItemsResponse](t)(cards.ListCardItems(as(alice), &thothv1.ListCardItemsRequest{CollectionId: coll}))
+		out := map[int64][]*thothv1.CardCheckout{}
+		for _, it := range res.Items {
+			out[it.Id] = it.Checkouts
+		}
+		return out
+	}
+	const (
+		nonfoil = thothv1.FoilTreatment_FOIL_TREATMENT_NONFOIL
+		foil    = thothv1.FoilTreatment_FOIL_TREATMENT_FOIL
+		main    = thothv1.DeckBoard_DECK_BOARD_MAIN
+		side    = thothv1.DeckBoard_DECK_BOARD_SIDEBOARD
+	)
+
+	boxA, boxB := newBox(alice, "Box A"), newBox(alice, "Box B")
+	cobEN := addCard(boxA, "cob-mh2", nonfoil, "en", 2)
+	cobFoil := addCard(boxA, "cob-5ed", foil, "en", 1)
+	cobJA := addCard(boxB, "cob-mh2", nonfoil, "ja", 1)
+	sol := addCard(boxB, "sol-c21", nonfoil, "en", 1)
+
+	atraxa := newDeck(alice, "Atraxa", map[thothv1.DeckBoard]map[string]int32{
+		main: {"City of Brass": 3, "Sol Ring": 1, "Swords to Plowshares": 1},
+		side: {"City of Brass": 1},
+	})
+	other := newDeck(alice, "Other", map[thothv1.DeckBoard]map[string]int32{main: {"Sol Ring": 1}})
+	must[*thothv1.CheckOutDeckCardsResponse](t)(decks.CheckOutDeckCards(as(alice), &thothv1.CheckOutDeckCardsRequest{
+		DeckId: other, Picks: []*thothv1.CheckoutPick{{CollectionCardId: sol, Quantity: 1}},
+	}))
+
+	t.Run("ownership counts any printing, foil and language across boxes", func(t *testing.T) {
+		own := ownership(atraxa)
+		cob := own["City of Brass"]
+		if cob.Needed != 4 || cob.Free != 4 || cob.Missing != 0 || cob.CheckedOutHere != 0 || len(cob.Copies) != 3 {
+			t.Errorf("City of Brass = needed %d free %d missing %d here %d copies %d, want 4/4/0/0/3",
+				cob.Needed, cob.Free, cob.Missing, cob.CheckedOutHere, len(cob.Copies))
+		}
+		// Nonfoil English first, then nonfoil Japanese, then the foil.
+		suggested := map[int64]int32{}
+		for _, c := range cob.Copies {
+			suggested[c.CollectionCardId] = c.SuggestedQuantity
+		}
+		if suggested[cobEN] != 2 || suggested[cobJA] != 1 || suggested[cobFoil] != 1 {
+			t.Errorf("suggestions = %v", suggested)
+		}
+		if s := own["Sol Ring"]; s.Free != 0 || s.CheckedOutElsewhere != 1 || s.Missing != 1 {
+			t.Errorf("Sol Ring = free %d elsewhere %d missing %d, want 0/1/1", s.Free, s.CheckedOutElsewhere, s.Missing)
+		}
+		if s := own["Swords to Plowshares"]; s.Missing != 1 || len(s.Copies) != 0 {
+			t.Errorf("Swords = missing %d copies %d, want 1/0", s.Missing, len(s.Copies))
+		}
+		if own[""].Missing != 2 {
+			t.Errorf("total missing = %d, want 2", own[""].Missing)
+		}
+	})
+
+	t.Run("only the owner sees ownership and can check out", func(t *testing.T) {
+		_, err := decks.GetDeckOwnership(as(bob), &thothv1.GetDeckOwnershipRequest{DeckId: atraxa})
+		wantCode(t, err, codes.PermissionDenied)
+		bobDeck := newDeck(bob, "Bob's", nil)
+		_, err = decks.CheckOutDeckCards(as(bob), &thothv1.CheckOutDeckCardsRequest{
+			DeckId: bobDeck, Picks: []*thothv1.CheckoutPick{{CollectionCardId: cobEN, Quantity: 1}},
+		})
+		wantCode(t, err, codes.NotFound)
+	})
+
+	t.Run("checking out more than is free records nothing", func(t *testing.T) {
+		_, err := decks.CheckOutDeckCards(as(alice), &thothv1.CheckOutDeckCardsRequest{
+			DeckId: atraxa, Picks: []*thothv1.CheckoutPick{{CollectionCardId: cobJA, Quantity: 1}, {CollectionCardId: sol, Quantity: 1}},
+		})
+		wantCode(t, err, codes.FailedPrecondition)
+		if here := ownership(atraxa)[""].CheckedOutHere; here != 0 {
+			t.Errorf("checked out after failed request = %d, want 0", here)
+		}
+	})
+
+	// Partial check-out: the foil stays in the box.
+	must[*thothv1.CheckOutDeckCardsResponse](t)(decks.CheckOutDeckCards(as(alice), &thothv1.CheckOutDeckCardsRequest{
+		DeckId: atraxa, Picks: []*thothv1.CheckoutPick{{CollectionCardId: cobEN, Quantity: 2}, {CollectionCardId: cobJA, Quantity: 1}},
+	}))
+
+	t.Run("checked-out cards show the deck in collection views and search", func(t *testing.T) {
+		cob := ownership(atraxa)["City of Brass"]
+		if cob.CheckedOutHere != 3 || cob.Free != 1 || cob.Missing != 0 {
+			t.Errorf("after check-out = here %d free %d missing %d, want 3/1/0", cob.CheckedOutHere, cob.Free, cob.Missing)
+		}
+		co := checkouts(boxA)
+		if len(co[cobEN]) != 1 || co[cobEN][0].DeckName != "Atraxa" || co[cobEN][0].Quantity != 2 || len(co[cobFoil]) != 0 {
+			t.Errorf("box A checkouts = %v", co)
+		}
+		found := must[*thothv1.SearchCollectionCardsResponse](t)(colls.SearchCollectionCards(as(alice), &thothv1.SearchCollectionCardsRequest{Query: "sol ring"}))
+		if len(found.Matches) != 1 || len(found.Matches[0].Items[0].Checkouts) != 1 || found.Matches[0].Items[0].Checkouts[0].DeckName != "Other" {
+			t.Errorf("search = %v", found.Matches)
+		}
+	})
+
+	t.Run("quantity can't drop below the checked-out copies", func(t *testing.T) {
+		_, err := cards.UpdateCardItem(as(alice), &thothv1.UpdateCardItemRequest{Id: cobEN, Quantity: 1})
+		wantCode(t, err, codes.FailedPrecondition)
+		must[*thothv1.UpdateCardItemResponse](t)(cards.UpdateCardItem(as(alice), &thothv1.UpdateCardItemRequest{Id: cobEN, Quantity: 3}))
+	})
+
+	t.Run("deck with checked-out cards can't be deleted", func(t *testing.T) {
+		_, err := decks.DeleteDeck(as(alice), &thothv1.DeleteDeckRequest{Id: atraxa})
+		wantCode(t, err, codes.FailedPrecondition)
+	})
+
+	t.Run("merging rows on move keeps their checkouts", func(t *testing.T) {
+		boxC := newBox(alice, "Box C")
+		extra := addCard(boxC, "cob-mh2", nonfoil, "en", 1)
+		must[*thothv1.CheckOutDeckCardsResponse](t)(decks.CheckOutDeckCards(as(alice), &thothv1.CheckOutDeckCardsRequest{
+			DeckId: atraxa, Picks: []*thothv1.CheckoutPick{{CollectionCardId: extra, Quantity: 1}},
+		}))
+		must[*thothv1.MoveCollectionItemsResponse](t)(colls.MoveCollectionItems(as(alice), &thothv1.MoveCollectionItemsRequest{
+			CollectionId: boxC, ItemIds: []int64{extra}, TargetCollectionId: boxA,
+		}))
+		co := checkouts(boxA)[cobEN]
+		if len(co) != 1 || co[0].Quantity != 3 {
+			t.Errorf("merged row checkouts = %v, want 3 in Atraxa", co)
+		}
+	})
+
+	t.Run("return goes box by box, partially then fully", func(t *testing.T) {
+		list := must[*thothv1.ListDeckCheckoutsResponse](t)(decks.ListDeckCheckouts(as(alice), &thothv1.ListDeckCheckoutsRequest{DeckId: atraxa}))
+		if len(list.Checkouts) != 2 || list.Checkouts[0].CollectionName != "Box A" || list.Checkouts[1].CollectionName != "Box B" {
+			t.Fatalf("checkouts = %v", list.Checkouts)
+		}
+		must[*thothv1.ReturnDeckCardsResponse](t)(decks.ReturnDeckCards(as(alice), &thothv1.ReturnDeckCardsRequest{
+			DeckId: atraxa, Picks: []*thothv1.ReturnPick{{CollectionCardId: cobEN, Quantity: 1}},
+		}))
+		if co := checkouts(boxA)[cobEN]; len(co) != 1 || co[0].Quantity != 2 {
+			t.Errorf("after partial return = %v, want 2", co)
+		}
+		_, err := decks.ReturnDeckCards(as(alice), &thothv1.ReturnDeckCardsRequest{
+			DeckId: atraxa, Picks: []*thothv1.ReturnPick{{CollectionCardId: cobFoil}},
+		})
+		wantCode(t, err, codes.NotFound)
+
+		must[*thothv1.ReturnDeckCardsResponse](t)(decks.ReturnDeckCards(as(alice), &thothv1.ReturnDeckCardsRequest{
+			DeckId: atraxa, Picks: []*thothv1.ReturnPick{{CollectionCardId: cobEN}, {CollectionCardId: cobJA}},
+		}))
+		if here := ownership(atraxa)[""].CheckedOutHere; here != 0 {
+			t.Errorf("checked out after full return = %d, want 0", here)
+		}
+		must[*thothv1.DeleteDeckResponse](t)(decks.DeleteDeck(as(alice), &thothv1.DeleteDeckRequest{Id: atraxa}))
 	})
 }

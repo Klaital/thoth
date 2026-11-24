@@ -9,6 +9,8 @@ import AddItemPage from "./pages/AddItemPage";
 import DecksPage from "./pages/DecksPage";
 import NewDeckPage from "./pages/NewDeckPage";
 import DeckDetailPage from "./pages/DeckDetailPage";
+import DeckCheckoutPage from "./pages/DeckCheckoutPage";
+import DeckReturnPage from "./pages/DeckReturnPage";
 import { useAuth } from "./context/AuthContext";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -76,6 +78,22 @@ export default function App() {
         element={
           <RequireAuth>
             <DeckDetailPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/decks/:id/checkout"
+        element={
+          <RequireAuth>
+            <DeckCheckoutPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/decks/:id/return"
+        element={
+          <RequireAuth>
+            <DeckReturnPage />
           </RequireAuth>
         }
       />

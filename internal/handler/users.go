@@ -13,6 +13,7 @@ import (
 	"github.com/klaital/thoth/internal/db"
 	thothv1 "github.com/klaital/thoth/internal/gen/thoth/v1"
 	"github.com/klaital/thoth/internal/model"
+	"github.com/klaital/thoth/internal/telemetry"
 )
 
 type UserHandler struct {
@@ -47,6 +48,8 @@ func (h *UserHandler) Register(ctx context.Context, req *thothv1.RegisterRequest
 		return nil, status.Error(codes.Internal, "failed to create user")
 	}
 
+	telemetry.Registrations.Add(ctx, 1)
+
 	newID, err := result.LastInsertId()
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to retrieve new user id")
@@ -69,7 +72,9 @@ func (h *UserHandler) Register(ctx context.Context, req *thothv1.RegisterRequest
 	}, nil
 }
 
-func (h *UserHandler) Login(ctx context.Context, req *thothv1.LoginRequest) (*thothv1.LoginResponse, error) {
+func (h *UserHandler) Login(ctx context.Context, req *thothv1.LoginRequest) (_ *thothv1.LoginResponse, err error) {
+	defer func() { telemetry.RecordLogin(ctx, "password", err) }()
+
 	if req.Email == "" || req.Password == "" {
 		return nil, status.Error(codes.InvalidArgument, "email and password are required")
 	}
@@ -103,7 +108,9 @@ func (h *UserHandler) Login(ctx context.Context, req *thothv1.LoginRequest) (*th
 	}, nil
 }
 
-func (h *UserHandler) RefreshToken(ctx context.Context, req *thothv1.RefreshTokenRequest) (*thothv1.RefreshTokenResponse, error) {
+func (h *UserHandler) RefreshToken(ctx context.Context, req *thothv1.RefreshTokenRequest) (_ *thothv1.RefreshTokenResponse, err error) {
+	defer func() { telemetry.RecordLogin(ctx, "refresh", err) }()
+
 	if req.RefreshToken == "" {
 		return nil, status.Error(codes.InvalidArgument, "refresh_token is required")
 	}

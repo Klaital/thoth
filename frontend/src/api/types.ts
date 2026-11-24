@@ -49,6 +49,14 @@ export interface CardItem {
   imageUri: string;
   scryfallUri: string;
   pricesJson: string;
+  // Copies checked out to decks; only sent to the collection's owner.
+  checkouts?: CardCheckout[];
+}
+
+export interface CardCheckout {
+  deckId: string;
+  deckName: string;
+  quantity: number;
 }
 
 export type SealedItemType =
@@ -233,4 +241,60 @@ export interface DeckCard {
   preferredCollectorNumber?: string;
   imageUri?: string;
   scryfallUri?: string;
+}
+
+// Deck ownership and check-out (TH-16, TH-17). The gateway leaves out
+// zero-valued numbers, so counts are optional; read them with `?? 0`.
+
+// One owned copy (a collection card row) of a card the deck lists.
+export interface OwnedCopy {
+  collectionCardId: string;
+  collectionId: string;
+  collectionName: string;
+  scryfallCardId: string;
+  setCode: string;
+  collectorNumber: string;
+  imageUri?: string;
+  foilTreatment: FoilTreatment;
+  language: string;
+  quantity?: number;
+  checkedOutHere?: number;
+  checkedOutElsewhere?: number;
+  // Copies still in the collection.
+  free?: number;
+  unitPriceUsd?: string;
+  suggestedQuantity?: number;
+}
+
+export interface DeckCardOwnership {
+  cardName: string;
+  // Summed across boards; 0 when the name left the deck but copies are still
+  // checked out to it.
+  needed?: number;
+  checkedOutHere?: number;
+  free?: number;
+  checkedOutElsewhere?: number;
+  missing?: number;
+  copies?: OwnedCopy[];
+}
+
+export interface DeckOwnership {
+  cards?: DeckCardOwnership[];
+  totalMissing?: number;
+  totalCheckedOut?: number;
+}
+
+export interface DeckCheckout {
+  collectionCardId: string;
+  collectionId: string;
+  collectionName: string;
+  cardName: string;
+  scryfallCardId: string;
+  setCode: string;
+  collectorNumber: string;
+  imageUri?: string;
+  foilTreatment: FoilTreatment;
+  language: string;
+  quantity: number;
+  checkedOutAt?: string;
 }

@@ -6,10 +6,15 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/joho/godotenv"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+
 	"github.com/klaital/thoth/internal/db"
 	"github.com/klaital/thoth/internal/scryfall"
+	"github.com/klaital/thoth/internal/telemetry"
 )
 
 func main() {
@@ -20,18 +25,43 @@ func main() {
 	flag.Parse()
 
 	dsn := mustEnv("DB_DSN")
+	ctx := context.Background()
 
-	sqlDB, err := db.Connect(context.Background(), dsn)
+	shutdownTelemetry, err := telemetry.Setup(ctx, "thoth-sync")
 	if err != nil {
+		log.Fatalf("setting up telemetry: %v", err)
+	}
+	// Flush before any exit, including failures (log.Fatalf skips defers).
+	flush := func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := shutdownTelemetry(flushCtx); err != nil {
+			log.Printf("telemetry shutdown: %v", err)
+		}
+	}
+
+	sqlDB, err := db.Connect(ctx, dsn)
+	if err != nil {
+		flush()
 		log.Fatalf("connecting to DB: %v", err)
 	}
 	defer sqlDB.Close()
 
+	start := time.Now()
 	syncer := scryfall.NewSyncer(sqlDB, *cacheDir)
-	stats, err := syncer.Sync(context.Background())
+	stats, err := syncer.Sync(ctx)
+	result := "ok"
 	if err != nil {
+		result = "fail"
+	}
+	telemetry.SyncDuration.Record(ctx, time.Since(start).Seconds(),
+		metric.WithAttributes(attribute.String("result", result)))
+	if err != nil {
+		flush()
 		log.Fatalf("sync failed: %v", err)
 	}
+	telemetry.SyncCards.Add(ctx, int64(stats.CardsProcessed))
+	defer flush()
 
 	action := "used cached file"
 	if stats.Downloaded {
