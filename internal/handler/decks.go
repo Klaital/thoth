@@ -13,15 +13,17 @@ import (
 	"github.com/klaital/thoth/internal/db"
 	thothv1 "github.com/klaital/thoth/internal/gen/thoth/v1"
 	"github.com/klaital/thoth/internal/model"
+	"github.com/klaital/thoth/internal/telemetry"
 )
 
 type DeckHandler struct {
 	thothv1.UnimplementedDeckServiceServer
+	sqlDB   *sql.DB
 	queries *db.Queries
 }
 
-func NewDeckHandler(queries *db.Queries) *DeckHandler {
-	return &DeckHandler{queries: queries}
+func NewDeckHandler(sqlDB *sql.DB, queries *db.Queries) *DeckHandler {
+	return &DeckHandler{sqlDB: sqlDB, queries: queries}
 }
 
 func (h *DeckHandler) CreateDeck(ctx context.Context, req *thothv1.CreateDeckRequest) (*thothv1.CreateDeckResponse, error) {
@@ -42,6 +44,7 @@ func (h *DeckHandler) CreateDeck(ctx context.Context, req *thothv1.CreateDeckReq
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to create deck")
 	}
+	telemetry.DecksCreated.Add(ctx, 1)
 	id, err := result.LastInsertId()
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to retrieve new deck id")
@@ -128,6 +131,15 @@ func (h *DeckHandler) UpdateDeck(ctx context.Context, req *thothv1.UpdateDeckReq
 func (h *DeckHandler) DeleteDeck(ctx context.Context, req *thothv1.DeleteDeckRequest) (*thothv1.DeleteDeckResponse, error) {
 	if _, err := h.ownedDeck(ctx, uint64(req.Id)); err != nil {
 		return nil, err
+	}
+	// Deleting the deck would silently "return" its checked-out cards while
+	// they are still physically in the deck box.
+	n, err := h.queries.CountCheckoutsByDeck(ctx, uint64(req.Id))
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to delete deck")
+	}
+	if n > 0 {
+		return nil, status.Error(codes.FailedPrecondition, "this deck has checked-out cards; return them before deleting it")
 	}
 	if err := h.queries.DeleteDeck(ctx, uint64(req.Id)); err != nil {
 		return nil, status.Error(codes.Internal, "failed to delete deck")

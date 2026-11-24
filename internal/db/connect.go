@@ -3,11 +3,15 @@ package db
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"log"
 	"time"
 
+	"github.com/XSAM/otelsql"
 	_ "github.com/go-sql-driver/mysql"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Pool tuning. database/sql transparently replaces dead connections, but only
@@ -28,9 +32,28 @@ const (
 // connections, retrying the initial ping with exponential backoff so the
 // process tolerates the database starting late or restarting.
 func Connect(ctx context.Context, dsn string) (*sql.DB, error) {
-	sqlDB, err := sql.Open("mysql", dsn)
+	// otelsql traces each query as a child of the caller's span and records
+	// query latency; both are no-ops unless telemetry is enabled.
+	sqlDB, err := otelsql.Open("mysql", dsn,
+		otelsql.WithAttributes(semconv.DBSystemNameMySQL),
+		otelsql.WithSpanOptions(otelsql.SpanOptions{
+			OmitRows:             true, // one span per row scan is noise
+			OmitConnResetSession: true,
+			DisableErrSkip:       true,
+			// Only trace queries made inside a request. Background work
+			// (migrations, usage gauges, the Scryfall sync's ~100k upserts)
+			// would otherwise produce floods of orphan root spans.
+			SpanFilter: func(ctx context.Context, _ otelsql.Method, _ string, _ []driver.NamedValue) bool {
+				return trace.SpanContextFromContext(ctx).IsValid()
+			},
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("opening DB: %w", err)
+	}
+	if _, err := otelsql.RegisterDBStatsMetrics(sqlDB, otelsql.WithAttributes(semconv.DBSystemNameMySQL)); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("registering DB pool metrics: %w", err)
 	}
 	sqlDB.SetConnMaxLifetime(connMaxLifetime)
 	sqlDB.SetConnMaxIdleTime(connMaxIdleTime)

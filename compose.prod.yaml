@@ -23,6 +23,12 @@ services:
       - --http-addr=:8080
       - --grpc-addr=:9090
       - --frontend-url=${FRONTEND_URL:-https://thoth.abandonedfactory.net}
+    environment:
+      # Tags telemetry with the deployed build; the OTLP endpoint and
+      # credentials come from .env.prod.
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod,service.version=${IMAGE_TAG}
 
   sync:
     image: ${ECR_REGISTRY:-813809418199.dkr.ecr.us-west-2.amazonaws.com}/thoth/api:${IMAGE_TAG:?IMAGE_TAG is required}
+    environment:
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod,service.version=${IMAGE_TAG}

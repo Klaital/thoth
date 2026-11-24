@@ -143,6 +143,9 @@ function SearchMatches({ items }: { items: CardItem[] }) {
               ` · ${FOIL_TREATMENT_LABELS[item.foilTreatment]}`}
             {item.language && item.language !== "en" && ` · ${item.language.toUpperCase()}`}
           </span>
+          {item.checkouts?.map((c) => (
+            <span key={c.deckId} className="search-match-meta card-checkouts">{c.quantity} in {c.deckName}</span>
+          ))}
         </li>
       ))}
       {items.length > shown.length && (

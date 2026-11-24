@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { apiFetch, parseUserId } from "../api/auth";
+import { errorMessage } from "../api/errors";
 import {
   Collection,
   COLLECTION_TYPE_LABELS,
@@ -15,6 +16,7 @@ import {
 } from "../api/types";
 import AppLayout from "../components/AppLayout";
 import QuantityStepper from "../components/QuantityStepper";
+import CheckoutNote from "../components/CheckoutNote";
 import { useAuth } from "../context/AuthContext";
 
 export default function CollectionDetailPage() {
@@ -26,6 +28,8 @@ export default function CollectionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Why the last item edit was refused (e.g. lowering below checked-out copies).
+  const [editError, setEditError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [moveTargets, setMoveTargets] = useState<Collection[]>([]);
 
@@ -149,6 +153,7 @@ export default function CollectionDetailPage() {
 
     const body = buildUpdateBody(collection.type, items!, itemId, newQty);
     const resp = await apiFetch(endpoint, { method: "PATCH", body: JSON.stringify(body) });
+    setEditError(resp.ok ? null : await errorMessage(resp, "Failed to update the quantity."));
     if (resp.ok) {
       const data = await resp.json();
       const updated = data.item;
@@ -177,6 +182,7 @@ export default function CollectionDetailPage() {
       method: "PATCH",
       body: JSON.stringify({ quantity: item.quantity, notes: item.notes, language }),
     });
+    setEditError(resp.ok ? null : await errorMessage(resp, "Failed to change the language."));
     // Changing to a language the collection already holds for this printing
     // merges the rows, so refetch.
     if (resp.ok) await fetchItems(collection);
@@ -189,6 +195,7 @@ export default function CollectionDetailPage() {
     <AppLayout>
       <div className="page">
         <Link to="/collections" className="back-link">← All collections</Link>
+        {editError && <p className="error-msg" role="alert">{editError}</p>}
 
         <div className="detail-header">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
@@ -446,6 +453,7 @@ function CardRows({ items, isOwner, selected, onToggleSelect, onRemove, onQuanti
                 {item.setCode.toUpperCase()} #{item.collectorNumber} &middot; {FOIL_TREATMENT_LABELS[item.foilTreatment]}
                 {!isOwner && item.language && item.language !== "en" && <> &middot; {languageLabel(item.language)}</>}
               </span>
+              <CheckoutNote checkouts={item.checkouts} />
               {item.notes && <span className="item-notes">{item.notes}</span>}
             </div>
             {unit !== null && (

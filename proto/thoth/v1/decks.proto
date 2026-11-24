@@ -4,6 +4,7 @@ package thoth.v1;
 
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
+import "thoth/v1/card_items.proto";
 
 option go_package = "github.com/klaital/thoth/internal/gen/thoth/v1;thothv1";
 
@@ -159,6 +160,106 @@ message BulkImportDeckCardLineResult {
   string name = 6;
 }
 
+// Ownership and check-out (TH-16, TH-17). Only the deck owner can see these,
+// and they use the owner's card collections.
+
+// One owned copy (a collection card row) of a card the deck lists.
+message OwnedCopy {
+  int64 collection_card_id = 1;
+  int64 collection_id = 2;
+  string collection_name = 3;
+  string scryfall_card_id = 4;
+  string set_code = 5;
+  string collector_number = 6;
+  string image_uri = 7;
+  FoilTreatment foil_treatment = 8;
+  string language = 9;
+  // Copies owned in this row, including checked-out ones.
+  int32 quantity = 10;
+  int32 checked_out_here = 11;
+  int32 checked_out_elsewhere = 12;
+  // Copies still in the collection.
+  int32 free = 13;
+  // Scryfall USD price for this foil treatment; unset when unknown.
+  optional string unit_price_usd = 14;
+  // How many to pull from this row for a check-out.
+  int32 suggested_quantity = 15;
+}
+
+message DeckCardOwnership {
+  string card_name = 1;
+  // Copies the deck lists, summed across boards. 0 when the name is no longer
+  // in the deck but copies are still checked out to it.
+  int32 needed = 2;
+  int32 checked_out_here = 3;
+  int32 free = 4;
+  int32 checked_out_elsewhere = 5;
+  // needed - checked_out_here - free, never negative.
+  int32 missing = 6;
+  repeated OwnedCopy copies = 7;
+}
+
+message GetDeckOwnershipRequest {
+  int64 deck_id = 1;
+}
+
+message GetDeckOwnershipResponse {
+  repeated DeckCardOwnership cards = 1;
+  int32 total_missing = 2;
+  int32 total_checked_out = 3;
+}
+
+message CheckoutPick {
+  int64 collection_card_id = 1;
+  int32 quantity = 2;
+}
+
+message CheckOutDeckCardsRequest {
+  int64 deck_id = 1;
+  // All or nothing: if any pick wants more copies than are free, nothing is
+  // checked out.
+  repeated CheckoutPick picks = 2;
+}
+
+message CheckOutDeckCardsResponse {}
+
+message DeckCheckout {
+  int64 collection_card_id = 1;
+  int64 collection_id = 2;
+  string collection_name = 3;
+  string card_name = 4;
+  string scryfall_card_id = 5;
+  string set_code = 6;
+  string collector_number = 7;
+  string image_uri = 8;
+  FoilTreatment foil_treatment = 9;
+  string language = 10;
+  int32 quantity = 11;
+  google.protobuf.Timestamp checked_out_at = 12;
+}
+
+message ListDeckCheckoutsRequest {
+  int64 deck_id = 1;
+}
+
+message ListDeckCheckoutsResponse {
+  // Ordered by collection, so the return list can go box by box.
+  repeated DeckCheckout checkouts = 1;
+}
+
+message ReturnPick {
+  int64 collection_card_id = 1;
+  // 0, or more than are checked out, returns all of them.
+  int32 quantity = 2;
+}
+
+message ReturnDeckCardsRequest {
+  int64 deck_id = 1;
+  repeated ReturnPick picks = 2;
+}
+
+message ReturnDeckCardsResponse {}
+
 service DeckService {
   rpc CreateDeck(CreateDeckRequest) returns (CreateDeckResponse) {
     option (google.api.http) = {
@@ -223,6 +324,32 @@ service DeckService {
   rpc RemoveDeckCard(RemoveDeckCardRequest) returns (RemoveDeckCardResponse) {
     option (google.api.http) = {
       delete: "/v1/deck-cards/{id}"
+    };
+  }
+
+  rpc GetDeckOwnership(GetDeckOwnershipRequest) returns (GetDeckOwnershipResponse) {
+    option (google.api.http) = {
+      get: "/v1/decks/{deck_id}/ownership"
+    };
+  }
+
+  rpc CheckOutDeckCards(CheckOutDeckCardsRequest) returns (CheckOutDeckCardsResponse) {
+    option (google.api.http) = {
+      post: "/v1/decks/{deck_id}/checkout"
+      body: "*"
+    };
+  }
+
+  rpc ListDeckCheckouts(ListDeckCheckoutsRequest) returns (ListDeckCheckoutsResponse) {
+    option (google.api.http) = {
+      get: "/v1/decks/{deck_id}/checkouts"
+    };
+  }
+
+  rpc ReturnDeckCards(ReturnDeckCardsRequest) returns (ReturnDeckCardsResponse) {
+    option (google.api.http) = {
+      post: "/v1/decks/{deck_id}/return"
+      body: "*"
     };
   }
 }

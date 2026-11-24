@@ -3,7 +3,7 @@
 // THOTH_TEST_DB_DSN must name a server (the database part is ignored) and a
 // user allowed to CREATE and DROP databases, e.g. the compose db service:
 //
-//	root:thoth-root@tcp(db:3306)/?parseTime=true
+//	root:thoth-root@tcp(db:3306)/?parseTime=true&interpolateParams=true
 //
 // Each call creates a uniquely named thoth_it_* database and drops it when the
 // test ends, so tests can run in parallel and never touch real data.

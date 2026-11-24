@@ -4,22 +4,26 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/klaital/thoth/internal/auth"
 	"github.com/klaital/thoth/internal/db"
 	thothv1 "github.com/klaital/thoth/internal/gen/thoth/v1"
 	"github.com/klaital/thoth/internal/model"
+	"github.com/klaital/thoth/internal/telemetry"
 )
 
 type CardItemHandler struct {
 	thothv1.UnimplementedCardItemServiceServer
+	sqlDB   *sql.DB
 	queries *db.Queries
 }
 
-func NewCardItemHandler(queries *db.Queries) *CardItemHandler {
-	return &CardItemHandler{queries: queries}
+func NewCardItemHandler(sqlDB *sql.DB, queries *db.Queries) *CardItemHandler {
+	return &CardItemHandler{sqlDB: sqlDB, queries: queries}
 }
 
 func (h *CardItemHandler) AddCardItem(ctx context.Context, req *thothv1.AddCardItemRequest) (*thothv1.AddCardItemResponse, error) {
@@ -48,6 +52,7 @@ func (h *CardItemHandler) AddCardItem(ctx context.Context, req *thothv1.AddCardI
 	}); err != nil {
 		return nil, status.Error(codes.Internal, "failed to add card item")
 	}
+	telemetry.CardsAdded.Add(ctx, int64(req.Quantity), telemetry.SourceSingle)
 
 	// Fetch the canonical row back to return.
 	row, err := h.queries.GetCardItemByKey(ctx, db.GetCardItemByKeyParams{
@@ -81,6 +86,11 @@ func (h *CardItemHandler) ListCardItems(ctx context.Context, req *thothv1.ListCa
 	for i, r := range rows {
 		out[i] = model.CardItemToProto(model.CardItemFromDB(r))
 	}
+	if callerID, err := auth.UserIDFromContext(ctx); err == nil && callerID == int64(c.OwnerID) {
+		if err := attachCheckouts(ctx, h.queries, out); err != nil {
+			return nil, err
+		}
+	}
 	return &thothv1.ListCardItemsResponse{Items: out}, nil
 }
 
@@ -104,43 +114,59 @@ func (h *CardItemHandler) UpdateCardItem(ctx context.Context, req *thothv1.Updat
 	}
 	resultID := uint64(req.Id)
 
-	if lang != row.Language {
-		// The unique key includes language, so changing to a language the
-		// collection already holds for this printing and foil merges the rows.
-		existing, err := h.queries.FindCardItem(ctx, db.FindCardItemParams{
-			CollectionID:   row.CollectionID,
-			ScryfallCardID: row.ScryfallCardID,
-			FoilTreatment:  row.FoilTreatment,
-			Language:       lang,
-		})
-		switch {
-		case err == nil:
-			if err := h.queries.UpdateCardItem(ctx, db.UpdateCardItemParams{
-				Quantity: existing.Quantity + req.Quantity,
-				Notes:    existing.Notes,
-				Language: lang,
-				ID:       existing.ID,
-			}); err != nil {
-				return nil, status.Error(codes.Internal, "failed to update card item")
-			}
-			if err := h.queries.DeleteCardItem(ctx, uint64(req.Id)); err != nil {
-				return nil, status.Error(codes.Internal, "failed to update card item")
-			}
-			resultID = existing.ID
-		case !errors.Is(err, sql.ErrNoRows):
-			return nil, status.Error(codes.Internal, "failed to update card item")
+	err = runInTx(ctx, h.sqlDB, h.queries, func(q *db.Queries) error {
+		// Checked-out copies are still owned, so the quantity can't drop
+		// below them. They'd have to be returned first.
+		out, err := q.SumCheckoutsForCard(ctx, uint64(req.Id))
+		if err != nil {
+			return err
 		}
-	}
+		if int64(req.Quantity) < out {
+			return status.Error(codes.FailedPrecondition,
+				fmt.Sprintf("%d %s checked out to decks; return them before lowering the quantity", out, plural(out, "copy is", "copies are")))
+		}
 
-	if resultID == uint64(req.Id) {
-		if err := h.queries.UpdateCardItem(ctx, db.UpdateCardItemParams{
+		if lang != row.Language {
+			// The unique key includes language, so changing to a language the
+			// collection already holds for this printing and foil merges the rows.
+			existing, err := q.FindCardItem(ctx, db.FindCardItemParams{
+				CollectionID:   row.CollectionID,
+				ScryfallCardID: row.ScryfallCardID,
+				FoilTreatment:  row.FoilTreatment,
+				Language:       lang,
+			})
+			switch {
+			case err == nil:
+				if err := q.UpdateCardItem(ctx, db.UpdateCardItemParams{
+					Quantity: existing.Quantity + req.Quantity,
+					Notes:    existing.Notes,
+					Language: lang,
+					ID:       existing.ID,
+				}); err != nil {
+					return err
+				}
+				if err := q.MergeCheckoutsInto(ctx, db.MergeCheckoutsIntoParams{ToID: existing.ID, FromID: uint64(req.Id)}); err != nil {
+					return err
+				}
+				if err := q.DeleteCardItem(ctx, uint64(req.Id)); err != nil {
+					return err
+				}
+				resultID = existing.ID
+				return nil
+			case !errors.Is(err, sql.ErrNoRows):
+				return err
+			}
+		}
+
+		return q.UpdateCardItem(ctx, db.UpdateCardItemParams{
 			Quantity: req.Quantity,
 			Notes:    nullString(req.Notes),
 			Language: lang,
 			ID:       uint64(req.Id),
-		}); err != nil {
-			return nil, status.Error(codes.Internal, "failed to update card item")
-		}
+		})
+	})
+	if err != nil {
+		return nil, statusOr(err, "failed to update card item")
 	}
 
 	rows, err := h.queries.ListCardItemsByCollection(ctx, row.CollectionID)
@@ -149,7 +175,11 @@ func (h *CardItemHandler) UpdateCardItem(ctx context.Context, req *thothv1.Updat
 	}
 	for _, r := range rows {
 		if r.ID == resultID {
-			return &thothv1.UpdateCardItemResponse{Item: model.CardItemToProto(model.CardItemFromDB(r))}, nil
+			item := model.CardItemToProto(model.CardItemFromDB(r))
+			if err := attachCheckouts(ctx, h.queries, []*thothv1.CardItem{item}); err != nil {
+				return nil, err
+			}
+			return &thothv1.UpdateCardItemResponse{Item: item}, nil
 		}
 	}
 	return nil, status.Error(codes.Internal, "failed to locate updated card item")

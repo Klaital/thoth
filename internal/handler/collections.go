@@ -13,6 +13,7 @@ import (
 	"github.com/klaital/thoth/internal/db"
 	thothv1 "github.com/klaital/thoth/internal/gen/thoth/v1"
 	"github.com/klaital/thoth/internal/model"
+	"github.com/klaital/thoth/internal/telemetry"
 )
 
 type CollectionHandler struct {
@@ -47,6 +48,7 @@ func (h *CollectionHandler) CreateCollection(ctx context.Context, req *thothv1.C
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to create collection")
 	}
+	telemetry.CollectionsCreated.Add(ctx, 1)
 
 	newID, err := result.LastInsertId()
 	if err != nil {
@@ -198,6 +200,13 @@ func (h *CollectionHandler) SearchCollectionCards(ctx context.Context, req *thot
 		}
 		last := matches[len(matches)-1]
 		last.Items = append(last.Items, item)
+	}
+	var all []*thothv1.CardItem
+	for _, m := range matches {
+		all = append(all, m.Items...)
+	}
+	if err := attachCheckouts(ctx, h.queries, all); err != nil {
+		return nil, err
 	}
 	return &thothv1.SearchCollectionCardsResponse{Matches: matches}, nil
 }

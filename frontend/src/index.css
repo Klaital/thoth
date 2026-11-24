@@ -716,3 +716,37 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   cursor: pointer;
 }
 .name-suggestions button:hover, .name-suggestions button:focus { background: rgba(108,138,255,.1); }
+
+/* ── Deck ownership and check-out ── */
+a.btn-sm { display: inline-block; text-decoration: none; }
+a.btn-sm:hover { color: #fff; text-decoration: none; }
+.ownership-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+.ownership-actions { display: flex; gap: 8px; margin-left: auto; }
+.ownership-detail { color: var(--text-muted); }
+.ownership-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ownership-ok      { color: #50c878; }
+.ownership-partial { color: #ffb43c; }
+.ownership-missing { color: var(--danger); }
+.ownership-badge.ownership-ok      { background: rgba(80,200,120,.12); }
+.ownership-badge.ownership-partial { background: rgba(255,180,60,.12); }
+.ownership-badge.ownership-missing { background: rgba(255,95,95,.12); }
+.card-checkouts { color: #ffb43c; }
+.wizard-steps { display: flex; gap: 12px; font-size: 13px; color: var(--text-muted); }
+.wizard-steps .active { color: var(--text); font-weight: 600; }
+.wizard-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.checklist-row { cursor: pointer; }
+.checklist-row input[type=checkbox] { width: 18px; height: 18px; flex-shrink: 0; }

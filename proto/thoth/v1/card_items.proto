@@ -35,6 +35,15 @@ message CardItem {
   // Language of the physical card, as a short lowercase code ("en", "ja",
   // "de", ...). The printing reference is still Scryfall's English row.
   string language = 14;
+  // Copies currently checked out to decks. Only filled in for the
+  // collection's owner. quantity above still counts them as owned.
+  repeated CardCheckout checkouts = 15;
+}
+
+message CardCheckout {
+  int64 deck_id = 1;
+  string deck_name = 2;
+  int32 quantity = 3;
 }
 
 message AddCardItemRequest {

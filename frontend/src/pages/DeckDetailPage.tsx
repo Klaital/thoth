@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiFetch, parseUserId } from "../api/auth";
-import { Deck, DeckBoard, DeckCard, DECK_BOARD_LABELS, DECK_BOARD_OPTIONS } from "../api/types";
+import { Deck, DeckBoard, DeckCard, DeckCardOwnership, DeckOwnership, DECK_BOARD_LABELS, DECK_BOARD_OPTIONS } from "../api/types";
 import { describeDeckLine } from "../api/deckText";
+import { describeLocations } from "../api/checkout";
+import { errorMessage } from "../api/errors";
 import AppLayout from "../components/AppLayout";
 import BulkImportForm from "../components/BulkImportForm";
 import CommanderSummary from "../components/CommanderSummary";
@@ -17,15 +19,6 @@ Deck
 Sideboard
 2 Swords to Plowshares`;
 
-// Error message from a gRPC-gateway error response, if any.
-async function errorMessage(resp: Response, fallback: string): Promise<string> {
-  try {
-    const data = await resp.json();
-    return data.message || fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 export default function DeckDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -36,6 +29,9 @@ export default function DeckDetailPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [ownership, setOwnership] = useState<DeckOwnership | null>(null);
+  const [missingOnly, setMissingOnly] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const fetchDeck = useCallback(async () => {
     const r = await apiFetch(`/v1/decks/${id}`);
@@ -63,10 +59,23 @@ export default function DeckDetailPage() {
   const userId = token ? parseUserId(token) : null;
   const isOwner = !!deck && userId !== null && String(userId) === deck.ownerId;
 
+  // Ownership uses the owner's collections, so only the owner sees it. It
+  // depends on the deck's cards, so refetch whenever they change.
+  useEffect(() => {
+    if (!isOwner) return;
+    let cancelled = false;
+    apiFetch(`/v1/decks/${id}/ownership`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: DeckOwnership | null) => { if (!cancelled && data) setOwnership(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [id, isOwner, cards]);
+
   async function handleDelete() {
     if (!confirm("Delete this deck? This cannot be undone.")) return;
     const resp = await apiFetch(`/v1/decks/${id}`, { method: "DELETE" });
     if (resp.ok) navigate("/decks");
+    else setDeleteError(await errorMessage(resp, "Failed to delete the deck."));
   }
 
   async function handleQuantityChange(cardId: string, delta: 1 | -1) {
@@ -96,6 +105,10 @@ export default function DeckDetailPage() {
   if (notFound || !deck) return <AppLayout><p className="error-page">Deck not found.</p></AppLayout>;
 
   const total = cards.reduce((n, c) => n + c.quantity, 0);
+  const ownershipByName = new Map((ownership?.cards ?? []).map((o) => [o.cardName, o]));
+  const totalMissing = ownership?.totalMissing ?? 0;
+  const totalCheckedOut = ownership?.totalCheckedOut ?? 0;
+  const shown = missingOnly ? cards.filter((c) => (ownershipByName.get(c.cardName)?.missing ?? 0) > 0) : cards;
 
   return (
     <AppLayout>
@@ -103,6 +116,24 @@ export default function DeckDetailPage() {
         <Link to="/decks" className="back-link">← All decks</Link>
 
         <DeckHeader deck={deck} isOwner={isOwner} onSaved={setDeck} onDelete={handleDelete} />
+        {deleteError && <p className="error-msg" role="alert">{deleteError}</p>}
+
+        {isOwner && ownership && cards.length > 0 && (
+          <div className="ownership-summary">
+            <span className={totalMissing > 0 ? "ownership-missing" : "ownership-ok"}>
+              {totalMissing > 0 ? `${totalMissing} missing` : "You own every card"}
+            </span>
+            {totalCheckedOut > 0 && <span className="ownership-detail">{totalCheckedOut} checked out to this deck</span>}
+            <label className="checkbox-row" style={{ margin: 0 }}>
+              <input type="checkbox" checked={missingOnly} onChange={(e) => setMissingOnly(e.target.checked)} />
+              Missing only
+            </label>
+            <span className="ownership-actions">
+              <Link className="btn-sm" to={`/decks/${id}/checkout`}>Check out cards</Link>
+              {totalCheckedOut > 0 && <Link className="btn-sm" to={`/decks/${id}/return`}>Return cards</Link>}
+            </span>
+          </div>
+        )}
 
         <div className="page-header" style={{ marginBottom: 16 }}>
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Cards ({total})</h2>
@@ -135,13 +166,16 @@ export default function DeckDetailPage() {
 
         {isOwner && !bulkOpen && <AddDeckCardForm deckId={id!} onAdded={refresh} />}
 
+        {missingOnly && shown.length === 0 && cards.length > 0 && (
+          <div className="empty-state" style={{ padding: "32px 0" }}><p>Nothing missing.</p></div>
+        )}
         {cards.length === 0 ? (
           <div className="empty-state" style={{ padding: "32px 0" }}>
             <p>No cards yet.{isOwner ? " Add some by name, or bulk import a list." : ""}</p>
           </div>
         ) : (
           DECK_BOARD_OPTIONS.map((board) => {
-            const group = cards.filter((c) => c.board === board);
+            const group = shown.filter((c) => c.board === board);
             if (group.length === 0) return null;
             const count = group.reduce((n, c) => n + c.quantity, 0);
             return (
@@ -153,6 +187,7 @@ export default function DeckDetailPage() {
                       key={card.id}
                       card={card}
                       isOwner={isOwner}
+                      ownership={isOwner ? ownershipByName.get(card.cardName) : undefined}
                       onQuantityChange={handleQuantityChange}
                       onBoardChange={handleBoardChange}
                       onRemove={handleRemove}
@@ -357,9 +392,10 @@ function AddDeckCardForm({ deckId, onAdded }: { deckId: string; onAdded: () => P
   );
 }
 
-function DeckCardRow({ card, isOwner, onQuantityChange, onBoardChange, onRemove }: {
+function DeckCardRow({ card, isOwner, ownership, onQuantityChange, onBoardChange, onRemove }: {
   card: DeckCard;
   isOwner: boolean;
+  ownership?: DeckCardOwnership;
   onQuantityChange: (id: string, delta: 1 | -1) => void;
   onBoardChange: (id: string, board: DeckBoard) => void;
   onRemove: (id: string) => void;
@@ -380,7 +416,11 @@ function DeckCardRow({ card, isOwner, onQuantityChange, onBoardChange, onRemove 
             Preferred: {card.preferredSetCode.toUpperCase()} #{card.preferredCollectorNumber}
           </span>
         )}
+        {ownership && describeLocations(ownership) && (
+          <span className="item-meta ownership-locations">{describeLocations(ownership)}</span>
+        )}
       </div>
+      {ownership && <OwnershipBadge ownership={ownership} />}
       {isOwner && (
         <select
           className="category-select"
@@ -403,5 +443,20 @@ function DeckCardRow({ card, isOwner, onQuantityChange, onBoardChange, onRemove 
         </button>
       )}
     </div>
+  );
+}
+
+// "3/4": copies available to the deck (checked out to it or free in a
+// collection) out of the copies it needs, across all boards.
+function OwnershipBadge({ ownership }: { ownership: DeckCardOwnership }) {
+  const needed = ownership.needed ?? 0;
+  const missing = ownership.missing ?? 0;
+  const have = needed - missing;
+  const cls = missing === 0 ? "ownership-ok" : have > 0 ? "ownership-partial" : "ownership-missing";
+  const title = missing === 0 ? "You own enough copies" : `${missing} missing`;
+  return (
+    <span className={`ownership-badge ${cls}`} title={title} aria-label={`Owned ${have} of ${needed}`}>
+      {have}/{needed}
+    </span>
   );
 }

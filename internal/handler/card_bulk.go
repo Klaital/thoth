@@ -14,6 +14,7 @@ import (
 	"github.com/klaital/thoth/internal/db"
 	thothv1 "github.com/klaital/thoth/internal/gen/thoth/v1"
 	"github.com/klaital/thoth/internal/model"
+	"github.com/klaital/thoth/internal/telemetry"
 )
 
 // moxfieldLine matches Moxfield's text export format:
@@ -83,25 +84,71 @@ func cardNameMatches(lineName, cardName string) bool {
 		strings.HasPrefix(strings.ToLower(cardName), strings.ToLower(lineName)+" // ")
 }
 
-// resolveCard finds the exact Scryfall printing for a parsed line. It never
-// guesses another printing, but warns when the name doesn't match.
-func (h *CardItemHandler) resolveCard(ctx context.Context, parsed bulkCardLine) (db.ScryfallCard, string, error) {
-	card, err := h.queries.GetScryfallCardBySetAndNumber(ctx, db.GetScryfallCardBySetAndNumberParams{
-		SetCode:         parsed.SetCode,
-		CollectorNumber: parsed.CollectorNumber,
-	})
-	if err != nil {
-		return db.ScryfallCard{}, "", fmt.Errorf("%s #%s not found", strings.ToUpper(parsed.SetCode), parsed.CollectorNumber)
-	}
-	if !cardNameMatches(parsed.Name, card.Name) {
-		return card, fmt.Sprintf("%s #%s is %q, not %q", strings.ToUpper(parsed.SetCode), parsed.CollectorNumber, card.Name, parsed.Name), nil
-	}
-	return card, "", nil
+// printingRef names a printing by set code and collector number.
+type printingRef struct {
+	SetCode         string
+	CollectorNumber string
 }
 
+// printingKey identifies a printing, ignoring case as the database does.
+func printingKey(setCode, collectorNumber string) string {
+	return strings.ToLower(setCode) + "#" + strings.ToLower(collectorNumber)
+}
+
+// lookupPrintings fetches the printings in refs with one query, keyed by
+// printingKey. Printings that don't exist are absent from the map.
+func lookupPrintings(ctx context.Context, q *db.Queries, refs []printingRef) (map[string]db.ListScryfallCardsBySetsAndNumbersRow, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	var sets, numbers []string
+	seenSet, seenNumber := map[string]bool{}, map[string]bool{}
+	for _, r := range refs {
+		if !seenSet[r.SetCode] {
+			seenSet[r.SetCode] = true
+			sets = append(sets, r.SetCode)
+		}
+		if !seenNumber[r.CollectorNumber] {
+			seenNumber[r.CollectorNumber] = true
+			numbers = append(numbers, r.CollectorNumber)
+		}
+	}
+	// The query matches any set with any number, a superset of the pairs
+	// asked for; only the exact pairs are looked up in the result.
+	cards, err := q.ListScryfallCardsBySetsAndNumbers(ctx, db.ListScryfallCardsBySetsAndNumbersParams{
+		SetCodes:         sets,
+		CollectorNumbers: numbers,
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to look up cards")
+	}
+	byKey := make(map[string]db.ListScryfallCardsBySetsAndNumbersRow, len(cards))
+	for _, c := range cards {
+		key := printingKey(c.SetCode, c.CollectorNumber)
+		if _, ok := byKey[key]; !ok {
+			byKey[key] = c
+		}
+	}
+	return byKey, nil
+}
+
+// pendingCardLine is one card line of a collection bulk import as it moves
+// from parsing through lookup to the write. cardID stays empty if the line
+// failed.
+type pendingCardLine struct {
+	parsed bulkCardLine
+	cardID string
+	res    *thothv1.BulkImportCardLineResult
+}
+
+// BulkImportCardItems adds a list of owned cards. Like a deck import, it
+// parses every line, looks the printings up in one query, writes in one
+// transaction, and sends the results once it commits, so the cost is a
+// handful of queries plus one upsert per line.
 func (h *CardItemHandler) BulkImportCardItems(req *thothv1.BulkImportCardItemsRequest, stream grpc.ServerStreamingServer[thothv1.BulkImportCardLineResult]) error {
 	ctx := stream.Context()
-	if _, err := requireCollectionOwner(ctx, h.queries, uint64(req.CollectionId)); err != nil {
+	collectionID := uint64(req.CollectionId)
+	if _, err := requireCollectionOwner(ctx, h.queries, collectionID); err != nil {
 		return err
 	}
 
@@ -128,6 +175,7 @@ func (h *CardItemHandler) BulkImportCardItems(req *thothv1.BulkImportCardItemsRe
 		return status.Errorf(codes.InvalidArgument, "too many lines (max %d)", maxBulkImportLines)
 	}
 
+	pending := make([]*pendingCardLine, 0, cardLines)
 	for i, raw := range lines {
 		line := strings.TrimSpace(raw)
 		if line == "" {
@@ -136,54 +184,144 @@ func (h *CardItemHandler) BulkImportCardItems(req *thothv1.BulkImportCardItemsRe
 		if _, ok := parseBoardHeader(line); ok {
 			continue
 		}
-		res := h.importCardLine(ctx, uint64(req.CollectionId), lang, line)
-		res.LineNumber = int32(i + 1)
-		if err := stream.Send(res); err != nil {
+		p := &pendingCardLine{res: &thothv1.BulkImportCardLineResult{Line: line, LineNumber: int32(i + 1)}}
+		parsed, err := parseMoxfieldLine(line)
+		if err != nil {
+			p.res.Error = err.Error()
+		} else {
+			p.parsed = parsed
+			p.res.Name = parsed.Name
+		}
+		pending = append(pending, p)
+	}
+
+	if err := h.resolveCardLines(ctx, pending); err != nil {
+		return err
+	}
+	if err := h.writeCardLines(ctx, collectionID, lang, pending); err != nil {
+		return err
+	}
+	h.attachImportedItems(ctx, collectionID, lang, pending)
+
+	for _, p := range pending {
+		added := p.res.Error == ""
+		telemetry.RecordBulkLine(ctx, "card", added)
+		if added {
+			telemetry.CardsAdded.Add(ctx, int64(p.parsed.Quantity), telemetry.SourceBulk)
+		}
+		if err := stream.Send(p.res); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// importCardLine adds the card on one bulk import line, reporting any
-// problem in the result rather than as an error.
-func (h *CardItemHandler) importCardLine(ctx context.Context, collectionID uint64, lang string, line string) *thothv1.BulkImportCardLineResult {
-	res := &thothv1.BulkImportCardLineResult{Line: line}
-	parsed, err := parseMoxfieldLine(line)
-	if err != nil {
-		res.Error = err.Error()
-		return res
+// resolveCardLines finds the exact printing for each parsed line. It never
+// guesses another printing: a missing one fails the line, and one whose name
+// doesn't match is used with a warning.
+func (h *CardItemHandler) resolveCardLines(ctx context.Context, pending []*pendingCardLine) error {
+	var refs []printingRef
+	for _, p := range pending {
+		if p.res.Error == "" {
+			refs = append(refs, printingRef{SetCode: p.parsed.SetCode, CollectorNumber: p.parsed.CollectorNumber})
+		}
 	}
-	res.Name = parsed.Name
-	card, warning, err := h.resolveCard(ctx, parsed)
+	printings, err := lookupPrintings(ctx, h.queries, refs)
 	if err != nil {
-		res.Error = err.Error()
-		return res
+		return err
 	}
-	res.Warning = warning
+	for _, p := range pending {
+		if p.res.Error != "" {
+			continue
+		}
+		label := fmt.Sprintf("%s #%s", strings.ToUpper(p.parsed.SetCode), p.parsed.CollectorNumber)
+		card, ok := printings[printingKey(p.parsed.SetCode, p.parsed.CollectorNumber)]
+		if !ok {
+			p.res.Error = label + " not found"
+			continue
+		}
+		if !cardNameMatches(p.parsed.Name, card.Name) {
+			p.res.Warning = fmt.Sprintf("%s is %q, not %q", label, card.Name, p.parsed.Name)
+		}
+		p.cardID = card.ID
+	}
+	return nil
+}
 
-	// The upsert adds to an existing row's quantity, so repeated lines merge.
-	if _, err := h.queries.UpsertCardItem(ctx, db.UpsertCardItemParams{
-		CollectionID:   collectionID,
-		ScryfallCardID: card.ID,
-		FoilTreatment:  db.CollectionCardsFoilTreatment(parsed.Foil),
-		Language:       lang,
-		Quantity:       parsed.Quantity,
-	}); err != nil {
-		res.Error = "failed to add card"
-		return res
+// writeCardLines adds every resolved line in one transaction, so the import
+// lands whole or not at all. The upsert adds to an existing row's quantity,
+// so repeated lines merge.
+func (h *CardItemHandler) writeCardLines(ctx context.Context, collectionID uint64, lang string, pending []*pendingCardLine) error {
+	hasWrites := false
+	for _, p := range pending {
+		if p.cardID != "" {
+			hasWrites = true
+			break
+		}
 	}
-	row, err := h.queries.GetCardItemByKey(ctx, db.GetCardItemByKeyParams{
-		CollectionID:   collectionID,
-		ScryfallCardID: card.ID,
-		FoilTreatment:  db.CollectionCardsFoilTreatment(parsed.Foil),
-		Language:       lang,
+	if !hasWrites {
+		return nil
+	}
+	err := runInTx(ctx, h.sqlDB, h.queries, func(q *db.Queries) error {
+		for _, p := range pending {
+			if p.cardID == "" {
+				continue
+			}
+			if _, err := q.UpsertCardItem(ctx, db.UpsertCardItemParams{
+				CollectionID:   collectionID,
+				ScryfallCardID: p.cardID,
+				FoilTreatment:  db.CollectionCardsFoilTreatment(p.parsed.Foil),
+				Language:       lang,
+				Quantity:       p.parsed.Quantity,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
-		// The card was added; only the echo of the stored row is missing.
-		res.Warning = "added, but failed to fetch the stored card"
-		return res
+		return status.Error(codes.Internal, "failed to import cards")
 	}
-	res.Item = model.CardItemToProto(model.CardItemFromDB(db.ListCardItemsByCollectionRow(row)))
-	return res
+	return nil
+}
+
+// attachImportedItems fills in each added line's stored row with one query
+// for the imported printings. The cards are already saved, so a failure here
+// only costs the echo, reported as a warning.
+func (h *CardItemHandler) attachImportedItems(ctx context.Context, collectionID uint64, lang string, pending []*pendingCardLine) {
+	var ids []string
+	seen := map[string]bool{}
+	for _, p := range pending {
+		if p.cardID != "" && !seen[p.cardID] {
+			seen[p.cardID] = true
+			ids = append(ids, p.cardID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	rows, err := h.queries.ListCardItemsByCollectionAndCards(ctx, db.ListCardItemsByCollectionAndCardsParams{
+		CollectionID:    collectionID,
+		ScryfallCardIds: ids,
+	})
+	byKey := make(map[string]*thothv1.CardItem, len(rows))
+	for _, row := range rows {
+		key := cardItemKey(row.ScryfallCardID, model.FoilTreatment(row.FoilTreatment), row.Language)
+		byKey[key] = model.CardItemToProto(model.CardItemFromDB(db.ListCardItemsByCollectionRow(row)))
+	}
+	for _, p := range pending {
+		if p.cardID == "" {
+			continue
+		}
+		if item, ok := byKey[cardItemKey(p.cardID, p.parsed.Foil, lang)]; ok && err == nil {
+			p.res.Item = item
+		} else if p.res.Warning == "" {
+			p.res.Warning = "added, but failed to fetch the stored card"
+		}
+	}
+}
+
+// cardItemKey identifies a collection card row within one collection.
+func cardItemKey(scryfallCardID string, foil model.FoilTreatment, lang string) string {
+	return scryfallCardID + "\x00" + string(foil) + "\x00" + strings.ToLower(lang)
 }

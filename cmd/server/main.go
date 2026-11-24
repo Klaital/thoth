@@ -2,27 +2,37 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/joho/godotenv"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 
+	"github.com/klaital/thoth/db/migrations"
 	"github.com/klaital/thoth/internal/auth"
 	"github.com/klaital/thoth/internal/db"
-	"github.com/klaital/thoth/db/migrations"
 	thothv1 "github.com/klaital/thoth/internal/gen/thoth/v1"
 	"github.com/klaital/thoth/internal/goupc"
 	"github.com/klaital/thoth/internal/handler"
+	"github.com/klaital/thoth/internal/telemetry"
 )
 
 // publicMethods bypass JWT validation.
@@ -51,14 +61,23 @@ func main() {
 	)
 	flag.Parse()
 
-	dsn         := mustEnv("DB_DSN")
-	jwtSecret   := mustEnv("JWT_SECRET")
-	googleID    := mustEnv("GOOGLE_CLIENT_ID")
-	googleSec   := mustEnv("GOOGLE_CLIENT_SECRET")
-	googleRedir := mustEnv("GOOGLE_REDIRECT_URL")
-	goupcKey    := os.Getenv("GOUPC_API_KEY") // optional; UPC lookups disabled if empty
+	// Stop on SIGINT/SIGTERM (docker stop) so servers drain and telemetry flushes.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	sqlDB, err := db.Connect(context.Background(), dsn)
+	shutdownTelemetry, err := telemetry.Setup(ctx, "thoth-api")
+	if err != nil {
+		log.Fatalf("setting up telemetry: %v", err)
+	}
+
+	dsn := mustEnv("DB_DSN")
+	jwtSecret := mustEnv("JWT_SECRET")
+	googleID := mustEnv("GOOGLE_CLIENT_ID")
+	googleSec := mustEnv("GOOGLE_CLIENT_SECRET")
+	googleRedir := mustEnv("GOOGLE_REDIRECT_URL")
+	goupcKey := os.Getenv("GOUPC_API_KEY") // optional; UPC lookups disabled if empty
+
+	sqlDB, err := db.Connect(ctx, dsn)
 	if err != nil {
 		log.Fatalf("connecting to DB: %v", err)
 	}
@@ -68,6 +87,12 @@ func main() {
 	}
 
 	queries := db.New(sqlDB)
+	if err := telemetry.RegisterUsageGauges(func(ctx context.Context) (telemetry.UsageTotals, error) {
+		t, err := queries.GetUsageTotals(ctx)
+		return telemetry.UsageTotals(t), err
+	}); err != nil {
+		log.Fatalf("registering usage gauges: %v", err)
+	}
 	jwtSvc := auth.NewJWTService(jwtSecret)
 	googleOAuth := auth.NewGoogleOAuth(googleID, googleSec, googleRedir)
 
@@ -77,13 +102,14 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.UnaryInterceptor(authInterceptor(jwtSvc)),
 		grpc.StreamInterceptor(authStreamInterceptor(jwtSvc)),
 	)
 	thothv1.RegisterUserServiceServer(grpcServer, handler.NewUserHandler(queries, jwtSvc))
 	thothv1.RegisterCollectionServiceServer(grpcServer, handler.NewCollectionHandler(sqlDB, queries))
-	thothv1.RegisterCardItemServiceServer(grpcServer, handler.NewCardItemHandler(queries))
-	thothv1.RegisterDeckServiceServer(grpcServer, handler.NewDeckHandler(queries))
+	thothv1.RegisterCardItemServiceServer(grpcServer, handler.NewCardItemHandler(sqlDB, queries))
+	thothv1.RegisterDeckServiceServer(grpcServer, handler.NewDeckHandler(sqlDB, queries))
 	thothv1.RegisterSealedItemServiceServer(grpcServer, handler.NewSealedItemHandler(queries, upcClient))
 	thothv1.RegisterBookDvdItemServiceServer(grpcServer, handler.NewBookDvdItemHandler(queries))
 	thothv1.RegisterScryfallServiceServer(grpcServer, handler.NewScryfallHandler(queries))
@@ -100,9 +126,12 @@ func main() {
 		}
 	}()
 
-	ctx := context.Background()
 	gwMux := runtime.NewServeMux()
-	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	dialOpts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		// Propagates the HTTP request's trace into the gRPC call.
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	}
 
 	if err := thothv1.RegisterUserServiceHandlerFromEndpoint(ctx, gwMux, *grpcAddr, dialOpts); err != nil {
 		log.Fatalf("registering user gateway: %v", err)
@@ -133,9 +162,54 @@ func main() {
 	httpMux.HandleFunc("/auth/google/callback", oauthHandlers.Callback)
 	httpMux.Handle("/", noProxyBuffering(gwMux))
 
-	log.Printf("HTTP listening on %s", *httpAddr)
-	if err := http.ListenAndServe(*httpAddr, httpMux); err != nil {
-		log.Fatalf("HTTP serve: %v", err)
+	httpServer := &http.Server{
+		Addr: *httpAddr,
+		Handler: otelhttp.NewHandler(httpMux, "http",
+			// Gateway paths embed IDs, so name those spans by method only;
+			// the child gRPC span carries the RPC name.
+			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+				if strings.HasPrefix(r.URL.Path, "/auth/") {
+					return r.Method + " " + r.URL.Path
+				}
+				return r.Method
+			}),
+		),
+	}
+	serveErr := make(chan error, 1)
+	go func() {
+		log.Printf("HTTP listening on %s", *httpAddr)
+		serveErr <- httpServer.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serveErr:
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("HTTP serve: %v", err)
+		}
+	case <-ctx.Done():
+		log.Printf("shutting down")
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP shutdown: %v", err)
+	}
+	// Long bulk-import streams shouldn't block exit past the deadline.
+	stopped := make(chan struct{})
+	go func() { grpcServer.GracefulStop(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-shutdownCtx.Done():
+		grpcServer.Stop()
+	}
+
+	// Flushed here rather than deferred: log.Fatalf skips defers anyway, and
+	// the final metric export must run before the DB pool closes.
+	flushCtx, cancelFlush := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelFlush()
+	if err := shutdownTelemetry(flushCtx); err != nil {
+		log.Printf("telemetry shutdown: %v", err)
 	}
 }
 
@@ -184,6 +258,7 @@ func authenticate(ctx context.Context, jwtSvc *auth.JWTService) (context.Context
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "invalid or expired token")
 	}
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Int64("enduser.id", claims.UserID))
 	return auth.ContextWithUserID(ctx, claims.UserID), nil
 }
 

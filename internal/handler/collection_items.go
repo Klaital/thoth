@@ -85,6 +85,10 @@ func moveCardItems(ctx context.Context, q *db.Queries, srcID, dstID uint64, ids 
 			}); err != nil {
 				return err
 			}
+			// Checked-out copies follow the cards into the surviving row.
+			if err := q.MergeCheckoutsInto(ctx, db.MergeCheckoutsIntoParams{ToID: existing.ID, FromID: r.ID}); err != nil {
+				return err
+			}
 			if err := q.DeleteCardItem(ctx, r.ID); err != nil {
 				return err
 			}
@@ -123,14 +127,19 @@ func (h *CollectionHandler) RemoveCollectionItems(ctx context.Context, req *thot
 	return &thothv1.RemoveCollectionItemsResponse{}, nil
 }
 
-// inTx runs fn with queries bound to a transaction, committing if it succeeds.
 func (h *CollectionHandler) inTx(ctx context.Context, fn func(q *db.Queries) error) error {
-	tx, err := h.sqlDB.BeginTx(ctx, nil)
+	return runInTx(ctx, h.sqlDB, h.queries, fn)
+}
+
+// runInTx runs fn with queries bound to a transaction, committing if it
+// succeeds. fn's error is returned unchanged, so it can be a gRPC status.
+func runInTx(ctx context.Context, sqlDB *sql.DB, queries *db.Queries, fn func(q *db.Queries) error) error {
+	tx, err := sqlDB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := fn(h.queries.WithTx(tx)); err != nil {
+	if err := fn(queries.WithTx(tx)); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -31,6 +31,10 @@ ON DUPLICATE KEY UPDATE
   prices_json      = VALUES(prices_json),
   synced_at        = VALUES(synced_at);
 
--- name: GetScryfallCardBySetAndNumber :one
-SELECT * FROM scryfall_cards WHERE set_code = ? AND collector_number = ? LIMIT 1;
+-- name: ListScryfallCardsBySetsAndNumbers :many
+-- Batch printing lookup. Returns every card in any of the sets with any of the
+-- numbers, a superset of the wanted pairs; callers pick out the exact pairs.
+SELECT id, name, set_code, collector_number FROM scryfall_cards
+WHERE set_code IN (sqlc.slice('set_codes')) AND collector_number IN (sqlc.slice('collector_numbers'))
+ORDER BY id;
 

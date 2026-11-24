@@ -3,7 +3,7 @@
 # files with -f, so it never loads this: prod uses a hosted database.
 #
 # Point DB_DSN in .env at this container:
-#   thoth:<MYSQL_PASSWORD>@tcp(db:3306)/thoth?parseTime=true
+#   thoth:<MYSQL_PASSWORD>@tcp(db:3306)/thoth?parseTime=true&interpolateParams=true
 
 services:
   api:
@@ -35,5 +35,19 @@ services:
       retries: 20
       start_period: 30s
 
+  # Optional local telemetry backend (Grafana + Prometheus + Tempo + Loki in
+  # one container): `docker compose --profile observability up -d`, then set
+  # OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-lgtm:4318 in .env and open
+  # http://localhost:3000 (admin/admin).
+  otel-lgtm:
+    image: grafana/otel-lgtm:latest
+    profiles: ["observability"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - lgtmdata:/data
+
 volumes:
   mysqldata:
+  lgtmdata:
