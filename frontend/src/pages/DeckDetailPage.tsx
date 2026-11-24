@@ -423,7 +423,7 @@ function DeckCardRow({ card, isOwner, ownership, rowOwnership, onQuantityChange,
           <span className="item-meta ownership-locations">{describeLocations(ownership)}</span>
         )}
       </div>
-      {rowOwnership && <OwnershipBadge quantity={card.quantity} row={rowOwnership} />}
+      {rowOwnership && <OwnershipBadge deckId={card.deckId} cardName={card.cardName} quantity={card.quantity} row={rowOwnership} />}
       {isOwner && (
         <select
           className="category-select"
@@ -452,15 +452,35 @@ function DeckCardRow({ card, isOwner, ownership, rowOwnership, onQuantityChange,
 // "1/2 checked out": copies of this row pulled from collections out of the
 // copies it lists. Amber while owned copies are still in their boxes, red
 // when some aren't owned (or are checked out to other decks).
-function OwnershipBadge({ quantity, row }: { quantity: number; row: RowOwnership }) {
+//
+// Clicking it is a shortcut into the wizard for just this card: check out
+// while copies are still in their boxes, otherwise return what's checked out.
+function OwnershipBadge({ deckId, cardName, quantity, row }: {
+  deckId: string;
+  cardName: string;
+  quantity: number;
+  row: RowOwnership;
+}) {
   const cls = row.missing > 0 ? "ownership-missing" : row.checkedOut < quantity ? "ownership-partial" : "ownership-ok";
   const parts = [`${row.checkedOut} checked out`];
   if (row.inCollection > 0) parts.push(`${row.inCollection} in your collections`);
   if (row.missing > 0) parts.push(`${row.missing} missing`);
-  return (
-    <span className={`ownership-badge ${cls}`} title={parts.join(", ")}>
+  const label = (
+    <>
       {row.checkedOut}/{quantity} checked out
       {row.missing > 0 && <> · {row.missing} missing</>}
-    </span>
+    </>
+  );
+  const action = row.inCollection > 0 ? "checkout" : row.checkedOut > 0 ? "return" : null;
+  if (!action) return <span className={`ownership-badge ${cls}`} title={parts.join(", ")}>{label}</span>;
+  const verb = action === "checkout" ? "Check out" : "Return";
+  return (
+    <Link
+      to={`/decks/${deckId}/${action}?card=${encodeURIComponent(cardName)}`}
+      className={`ownership-badge ownership-link ${cls}`}
+      title={`${parts.join(", ")}. ${verb} ${cardName}.`}
+    >
+      {label}
+    </Link>
   );
 }

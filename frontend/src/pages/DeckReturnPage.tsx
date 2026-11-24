@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../api/auth";
 import { describePrinting, groupCheckoutsByCollection } from "../api/checkout";
 import { errorMessage } from "../api/errors";
@@ -11,6 +11,8 @@ import AppLayout from "../components/AppLayout";
 export default function DeckReturnPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // ?card=<name>: a shortcut from one deck row, so only that card is shown.
+  const onlyCard = useSearchParams()[0].get("card");
   const [deck, setDeck] = useState<Deck | null>(null);
   const [checkouts, setCheckouts] = useState<DeckCheckout[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -23,10 +25,11 @@ export default function DeckReturnPage() {
       .then(async ([d, c]) => {
         if (!d.ok || !c.ok) { setLoadError(await errorMessage(d.ok ? c : d, "Deck not found.")); return; }
         setDeck((await d.json()).deck);
-        setCheckouts((await c.json()).checkouts ?? []);
+        const all: DeckCheckout[] = (await c.json()).checkouts ?? [];
+        setCheckouts(onlyCard ? all.filter((x) => x.cardName === onlyCard) : all);
       })
       .catch(() => setLoadError("Failed to load the deck."));
-  }, [id]);
+  }, [id, onlyCard]);
 
   if (loadError) return <AppLayout><p className="error-page">{loadError}</p></AppLayout>;
   if (!deck || !checkouts) return <AppLayout><p className="loading">Loading…</p></AppLayout>;
@@ -67,7 +70,7 @@ export default function DeckReturnPage() {
       <div className="page">
         <Link to={`/decks/${id}`} className="back-link">← {deck.name}</Link>
         <div className="page-header">
-          <h1>Return {deck.name}</h1>
+          <h1>Return {onlyCard ?? deck.name}</h1>
           {checkouts.length > 0 && (
             <button
               className="btn-ghost"
@@ -78,9 +81,14 @@ export default function DeckReturnPage() {
           )}
         </div>
 
+        {onlyCard && (
+          <p className="item-meta">
+            From {deck.name}. <Link to={`/decks/${id}/return`}>Return the whole deck instead</Link>
+          </p>
+        )}
         {checkouts.length === 0 ? (
           <div className="empty-state" style={{ padding: "32px 0" }}>
-            <p>No cards are checked out to this deck.</p>
+            <p>{onlyCard ? `No copies of ${onlyCard} are checked out to this deck.` : "No cards are checked out to this deck."}</p>
           </div>
         ) : (
           <>

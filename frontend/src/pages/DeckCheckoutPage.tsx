@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../api/auth";
 import {
   PickQuantities,
@@ -20,6 +20,8 @@ import AppLayout from "../components/AppLayout";
 export default function DeckCheckoutPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // ?card=<name>: a shortcut from one deck row, so only that card is shown.
+  const onlyCard = useSearchParams()[0].get("card");
   const [deck, setDeck] = useState<Deck | null>(null);
   const [ownership, setOwnership] = useState<DeckOwnership | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -33,13 +35,14 @@ export default function DeckCheckoutPage() {
     Promise.all([apiFetch(`/v1/decks/${id}`), apiFetch(`/v1/decks/${id}/ownership`)])
       .then(async ([d, o]) => {
         if (!d.ok || !o.ok) { setLoadError(await errorMessage(d.ok ? o : d, "Deck not found.")); return; }
-        const own: DeckOwnership = await o.json();
+        const all: DeckOwnership = await o.json();
+        const own = onlyCard ? { ...all, cards: (all.cards ?? []).filter((c) => c.cardName === onlyCard) } : all;
         setDeck((await d.json()).deck);
         setOwnership(own);
         setPicks(initialPicks(own));
       })
       .catch(() => setLoadError("Failed to load the deck."));
-  }, [id]);
+  }, [id, onlyCard]);
 
   if (loadError) return <AppLayout><p className="error-page">{loadError}</p></AppLayout>;
   if (!deck || !ownership) return <AppLayout><p className="loading">Loading…</p></AppLayout>;
@@ -95,7 +98,7 @@ export default function DeckCheckoutPage() {
       <div className="page">
         <Link to={`/decks/${id}`} className="back-link">← {deck.name}</Link>
         <div className="page-header">
-          <h1>Check out {deck.name}</h1>
+          <h1>Check out {onlyCard ?? deck.name}</h1>
           <span className="wizard-steps">
             <span className={step === "choose" ? "active" : ""}>1. Choose copies</span>
             <span className={step === "pull" ? "active" : ""}>2. Pull cards</span>
@@ -104,9 +107,18 @@ export default function DeckCheckoutPage() {
 
         {step === "choose" && (
           <>
+            {onlyCard && (
+              <p className="item-meta">
+                For {deck.name}. <Link to={`/decks/${id}/checkout`}>Check out the whole deck instead</Link>
+              </p>
+            )}
             {toPull.length === 0 && (
               <div className="empty-state" style={{ padding: "32px 0" }}>
-                <p>Nothing to pull: every card you own for this deck is already checked out to it.</p>
+                <p>
+                  {onlyCard
+                    ? `Nothing to pull: no free copies of ${onlyCard}, or the deck already has every copy it needs.`
+                    : "Nothing to pull: every card you own for this deck is already checked out to it."}
+                </p>
               </div>
             )}
             {toPull.map((card) => (

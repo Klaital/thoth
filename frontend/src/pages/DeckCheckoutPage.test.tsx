@@ -91,3 +91,28 @@ test("check-out records only the cards ticked off in the pull list", async () =>
   expect(await screen.findByText("deck page")).toBeTruthy();
   expect(posted).toEqual([{ picks: [{ collectionCardId: "22", quantity: 1 }] }]);
 });
+
+test("?card= limits the wizard to one card", async () => {
+  render(
+    <MemoryRouter initialEntries={["/decks/7/checkout?card=City%20of%20Brass"]}>
+      <AuthProvider>
+        <Routes>
+          <Route path="/decks/:id/checkout" element={<DeckCheckoutPage />} />
+          <Route path="/decks/:id" element={<p>deck page</p>} />
+        </Routes>
+      </AuthProvider>
+    </MemoryRouter>,
+  );
+
+  expect(await screen.findByRole("heading", { name: "Check out City of Brass" })).toBeTruthy();
+  // The other deck card is neither listed nor reported missing.
+  expect(screen.queryByText(/Missing, skipped/)).toBeNull();
+  expect(screen.queryByText(/Swords to Plowshares/)).toBeNull();
+  expect(screen.getByRole("link", { name: /whole deck/ }).getAttribute("href")).toBe("/decks/7/checkout");
+
+  fireEvent.click(screen.getByRole("button", { name: "Next: pull 2 cards" }));
+  for (const box of screen.getAllByRole("checkbox")) fireEvent.click(box);
+  fireEvent.click(screen.getByRole("button", { name: "Check out 2 cards" }));
+  expect(await screen.findByText("deck page")).toBeTruthy();
+  expect(posted).toEqual([{ picks: [{ collectionCardId: "11", quantity: 1 }, { collectionCardId: "22", quantity: 1 }] }]);
+});
