@@ -67,3 +67,14 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
     headers: withAuth(init?.headers ?? {}, getAccessToken()),
   });
 }
+
+// The signed-in user's id from the access token's claims, or null. Only for
+// UI decisions (e.g. showing edit controls); the server enforces access.
+export function parseUserId(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload.uid ?? null;
+  } catch {
+    return null;
+  }
+}

@@ -53,22 +53,23 @@ func TestParseMoxfieldLine(t *testing.T) {
 	}
 }
 
-func TestParseCategoryHeader(t *testing.T) {
+func TestParseBoardHeader(t *testing.T) {
 	tests := []struct {
 		line   string
-		want   model.CardCategory
+		want   model.DeckBoard
 		wantOK bool
 	}{
-		{"Sideboard", model.CardCategorySideboard, true},
-		{"SIDEBOARD:", model.CardCategorySideboard, true},
-		{"commander :", model.CardCategoryCommander, true},
-		{"Deck", model.CardCategoryDeck, true},
+		{"Sideboard", model.DeckBoardSideboard, true},
+		{"SIDEBOARD:", model.DeckBoardSideboard, true},
+		{"commander :", model.DeckBoardCommander, true},
+		{"Deck", model.DeckBoardMain, true},
+		{"Mainboard", model.DeckBoardMain, true},
 		{"Maybeboard", "", false},
 		{"1 Sol Ring (C21) 263", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.line, func(t *testing.T) {
-			got, ok := parseCategoryHeader(tt.line)
+			got, ok := parseBoardHeader(tt.line)
 			if ok != tt.wantOK || got != tt.want {
 				t.Errorf("got (%q, %v), want (%q, %v)", got, ok, tt.want, tt.wantOK)
 			}

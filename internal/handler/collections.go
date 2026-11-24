@@ -72,15 +72,10 @@ func (h *CollectionHandler) GetCollection(ctx context.Context, req *thothv1.GetC
 		return nil, status.Error(codes.Internal, "failed to fetch collection")
 	}
 
-	if err := h.authorizeRead(ctx, c); err != nil {
+	if err := authorizeCollectionRead(ctx, c); err != nil {
 		return nil, err
 	}
-
-	out := model.CollectionToProto(model.CollectionFromDB(c))
-	if err := h.attachCommanders(ctx, []*thothv1.Collection{out}); err != nil {
-		return nil, err
-	}
-	return &thothv1.GetCollectionResponse{Collection: out}, nil
+	return &thothv1.GetCollectionResponse{Collection: model.CollectionToProto(model.CollectionFromDB(c))}, nil
 }
 
 func (h *CollectionHandler) ListCollections(ctx context.Context, req *thothv1.ListCollectionsRequest) (*thothv1.ListCollectionsResponse, error) {
@@ -102,6 +97,11 @@ func (h *CollectionHandler) ListCollections(ctx context.Context, req *thothv1.Li
 
 	// Show all collections to the owner; only public ones to everyone else.
 	if callerErr == nil && callerID == targetOwnerID {
+		// Users created before (or outside) the migration that backfills
+		// defaults get theirs on first listing.
+		if _, err := ensureDefaultCollection(ctx, h.queries, uint64(callerID)); err != nil {
+			return nil, err
+		}
 		rows, dbErr = h.queries.ListCollectionsByOwner(ctx, uint64(targetOwnerID))
 	} else {
 		rows, dbErr = h.queries.ListPublicCollectionsByOwner(ctx, uint64(targetOwnerID))
@@ -114,35 +114,7 @@ func (h *CollectionHandler) ListCollections(ctx context.Context, req *thothv1.Li
 	for i, row := range rows {
 		out[i] = model.CollectionToProto(model.CollectionFromDB(row))
 	}
-	if err := h.attachCommanders(ctx, out); err != nil {
-		return nil, err
-	}
 	return &thothv1.ListCollectionsResponse{Collections: out}, nil
-}
-
-// attachCommanders fills in each collection's commander cards with one query.
-func (h *CollectionHandler) attachCommanders(ctx context.Context, collections []*thothv1.Collection) error {
-	if len(collections) == 0 {
-		return nil
-	}
-	byID := make(map[uint64]*thothv1.Collection, len(collections))
-	ids := make([]uint64, len(collections))
-	for i, c := range collections {
-		ids[i] = uint64(c.Id)
-		byID[ids[i]] = c
-	}
-	rows, err := h.queries.ListCommandersByCollections(ctx, ids)
-	if err != nil {
-		return status.Error(codes.Internal, "failed to fetch commanders")
-	}
-	for _, r := range rows {
-		c := byID[r.CollectionID]
-		c.Commanders = append(c.Commanders, &thothv1.CollectionCommander{
-			CardName: r.CardName,
-			ImageUri: r.ImageUri.String,
-		})
-	}
-	return nil
 }
 
 func (h *CollectionHandler) UpdateCollection(ctx context.Context, req *thothv1.UpdateCollectionRequest) (*thothv1.UpdateCollectionResponse, error) {
@@ -186,6 +158,9 @@ func (h *CollectionHandler) DeleteCollection(ctx context.Context, req *thothv1.D
 	if err := h.authorizeWrite(ctx, c); err != nil {
 		return nil, err
 	}
+	if c.IsDefault {
+		return nil, status.Error(codes.FailedPrecondition, "the default collection can't be deleted")
+	}
 
 	if err := h.queries.DeleteCollection(ctx, uint64(req.Id)); err != nil {
 		return nil, status.Error(codes.Internal, "failed to delete collection")
@@ -227,8 +202,9 @@ func (h *CollectionHandler) SearchCollectionCards(ctx context.Context, req *thot
 	return &thothv1.SearchCollectionCardsResponse{Matches: matches}, nil
 }
 
-// authorizeRead returns an error if the caller may not view the collection.
-func (h *CollectionHandler) authorizeRead(ctx context.Context, c db.Collection) error {
+// authorizeCollectionRead returns NotFound unless the collection is public or
+// the caller owns it.
+func authorizeCollectionRead(ctx context.Context, c db.Collection) error {
 	if c.IsPublic {
 		return nil
 	}

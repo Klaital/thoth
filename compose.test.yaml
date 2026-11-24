@@ -1,0 +1,24 @@
+# DB integration tests against the compose MySQL service. Layered on top of
+# compose.yaml and compose.override.yaml (which provides db):
+#
+#   make test-integration-docker
+#   docker compose -f compose.yaml -f compose.override.yaml -f compose.test.yaml \
+#     run --rm --build test-integration
+#
+# CI builds the image first (with layer caching) and runs it without --build.
+# From inside the devcontainer, `make test-integration` runs the same tests
+# directly.
+
+services:
+  test-integration:
+    build:
+      context: .
+      target: test-integration
+    image: thoth-test-integration
+    profiles: ["test"]
+    environment:
+      # Root, because the tests create and drop throwaway thoth_it_* databases.
+      THOTH_TEST_DB_DSN: root:${MYSQL_ROOT_PASSWORD:-thoth-root}@tcp(db:3306)/?parseTime=true
+    depends_on:
+      db:
+        condition: service_healthy

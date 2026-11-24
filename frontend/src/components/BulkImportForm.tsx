@@ -3,9 +3,8 @@ import { apiFetch } from "../api/auth";
 import { BulkImportEntry, BulkImportLineResult } from "../api/types";
 
 interface Props {
-  collectionId: number;
-  // Path under the collection, e.g. "sealed/bulk".
-  endpoint: string;
+  // Bulk import endpoint, e.g. "/v1/collections/3/sealed/bulk".
+  url: string;
   placeholder: string;
   help: ReactNode;
   // Extra fields rendered above the actions, and the values they add to the request.
@@ -51,8 +50,7 @@ async function* readJsonLines(resp: Response): AsyncGenerator<ResponseChunk> {
 }
 
 export default function BulkImportForm({
-  collectionId,
-  endpoint,
+  url,
   placeholder,
   help,
   extraFields,
@@ -96,9 +94,10 @@ export default function BulkImportForm({
 
     let fatal: string | null = null;
     try {
-      const resp = await apiFetch(`/v1/collections/${collectionId}/${endpoint}`, {
+      // Path parameters (collection or deck id) come from the URL.
+      const resp = await apiFetch(url, {
         method: "POST",
-        body: JSON.stringify({ ...extraBody, collectionId, text }),
+        body: JSON.stringify({ ...extraBody, text }),
       });
       if (!resp.ok) fatal = "Bulk import failed.";
       for await (const chunk of readJsonLines(resp)) {
@@ -111,7 +110,7 @@ export default function BulkImportForm({
           byLine.set(r.lineNumber, {
             ...entry,
             status: r.error ? "failed" : "added",
-            item: r.item,
+            item: r.item ?? r.card,
             warning: r.warning,
             error: r.error,
           });

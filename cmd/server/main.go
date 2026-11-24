@@ -2,19 +2,13 @@ package main
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"flag"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/golang-migrate/migrate/v4"
-	migmysql "github.com/golang-migrate/migrate/v4/database/mysql"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/joho/godotenv"
 	"google.golang.org/grpc"
@@ -69,7 +63,7 @@ func main() {
 		log.Fatalf("connecting to DB: %v", err)
 	}
 	defer sqlDB.Close()
-	if err := runMigrations(dsn); err != nil {
+	if err := migrations.Up(dsn); err != nil {
 		log.Fatalf("running migrations: %v", err)
 	}
 
@@ -89,6 +83,7 @@ func main() {
 	thothv1.RegisterUserServiceServer(grpcServer, handler.NewUserHandler(queries, jwtSvc))
 	thothv1.RegisterCollectionServiceServer(grpcServer, handler.NewCollectionHandler(sqlDB, queries))
 	thothv1.RegisterCardItemServiceServer(grpcServer, handler.NewCardItemHandler(queries))
+	thothv1.RegisterDeckServiceServer(grpcServer, handler.NewDeckHandler(queries))
 	thothv1.RegisterSealedItemServiceServer(grpcServer, handler.NewSealedItemHandler(queries, upcClient))
 	thothv1.RegisterBookDvdItemServiceServer(grpcServer, handler.NewBookDvdItemHandler(queries))
 	thothv1.RegisterScryfallServiceServer(grpcServer, handler.NewScryfallHandler(queries))
@@ -118,6 +113,9 @@ func main() {
 	if err := thothv1.RegisterCardItemServiceHandlerFromEndpoint(ctx, gwMux, *grpcAddr, dialOpts); err != nil {
 		log.Fatalf("registering card item gateway: %v", err)
 	}
+	if err := thothv1.RegisterDeckServiceHandlerFromEndpoint(ctx, gwMux, *grpcAddr, dialOpts); err != nil {
+		log.Fatalf("registering deck gateway: %v", err)
+	}
 	if err := thothv1.RegisterSealedItemServiceHandlerFromEndpoint(ctx, gwMux, *grpcAddr, dialOpts); err != nil {
 		log.Fatalf("registering sealed item gateway: %v", err)
 	}
@@ -139,38 +137,6 @@ func main() {
 	if err := http.ListenAndServe(*httpAddr, httpMux); err != nil {
 		log.Fatalf("HTTP serve: %v", err)
 	}
-}
-
-func runMigrations(dsn string) error {
-	// Open a separate connection with multiStatements=true — required to execute
-	// migration files that contain more than one statement.
-	if strings.Contains(dsn, "?") {
-		dsn += "&multiStatements=true"
-	} else {
-		dsn += "?multiStatements=true"
-	}
-	migDB, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return err
-	}
-	defer migDB.Close()
-
-	src, err := iofs.New(migrations.FS, ".")
-	if err != nil {
-		return err
-	}
-	driver, err := migmysql.WithInstance(migDB, &migmysql.Config{})
-	if err != nil {
-		return err
-	}
-	m, err := migrate.NewWithInstance("iofs", src, "mysql", driver)
-	if err != nil {
-		return err
-	}
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return err
-	}
-	return nil
 }
 
 func authInterceptor(jwtSvc *auth.JWTService) grpc.UnaryServerInterceptor {

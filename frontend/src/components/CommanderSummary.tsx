@@ -1,11 +1,11 @@
-import { CollectionCommander } from "../api/types";
+import { DeckCommander } from "../api/types";
 
 interface Props {
-  commanders: CollectionCommander[];
+  commanders: DeckCommander[];
   size?: "small" | "large";
 }
 
-// Shows a deck's commander card(s) with their names, e.g. under the collection name.
+// Shows a deck's commander card(s) with their names, e.g. under the deck name.
 export default function CommanderSummary({ commanders, size = "small" }: Props) {
   return (
     <div className={`commander-summary commander-summary-${size}`}>

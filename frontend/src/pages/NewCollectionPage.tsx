@@ -52,7 +52,7 @@ export default function NewCollectionPage() {
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. My Commander Deck"
+                placeholder="e.g. Bulk box 1"
                 required
               />
             </div>
@@ -64,7 +64,7 @@ export default function NewCollectionPage() {
                 rows={3}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="What's in this collection?"
+                placeholder="Where is it kept? What's in it?"
                 style={{ resize: "vertical" }}
               />
             </div>

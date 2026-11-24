@@ -42,7 +42,27 @@ jobs:
           cache-from: type=gha,scope=go
           cache-to: type=gha,scope=go,mode=max
 
-      - name: Frontend typecheck, build + lint
+      # DB integration tests run against the compose MySQL (compose.override.yaml)
+      # in a container from the test-integration stage, built here so it gets
+      # the same layer cache as test-go.
+      - name: Build integration test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: test-integration
+          load: true
+          tags: thoth-test-integration
+          cache-from: type=gha,scope=go
+          cache-to: type=gha,scope=go,mode=max
+
+      - name: Integration tests (compose MySQL)
+        run: docker compose -f compose.yaml -f compose.override.yaml -f compose.test.yaml run --rm test-integration
+
+      - name: Stop compose stack
+        if: always()
+        run: docker compose -f compose.yaml -f compose.override.yaml -f compose.test.yaml down -v
+
+      - name: Frontend typecheck, build, lint + tests
         uses: docker/build-push-action@v7
         with:
           context: .

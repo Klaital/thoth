@@ -6,6 +6,7 @@
 #   target "web" -> nginx serving the built React SPA and proxying to "api"
 #   target "dev" -> devcontainer toolchain (Go, Node, buf, sqlc, air, lint)
 #   targets "test-go" / "test-web" -> CI checks (vet + tests, tsc + eslint)
+#   target "test-integration" -> DB integration tests, run via compose.test.yaml
 #
 # Generated code (buf + sqlc) is gitignored, so it's produced in the "codegen"
 # stage and shared by both the Go and frontend builds.
@@ -97,6 +98,16 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go vet ./... && go test ./...
 
 # ---------------------------------------------------------------------------
+# DB integration tests (CI): run as a container next to the compose MySQL,
+# see compose.test.yaml. Modules and test binaries are baked into the image
+# (no cache mounts) so the run itself needs no network.
+# ---------------------------------------------------------------------------
+FROM api-build AS test-integration
+RUN go mod download && go test -tags integration -count=1 -run '^$' ./... >/dev/null
+ENTRYPOINT ["go", "test", "-tags", "integration", "-count=1"]
+CMD ["./..."]
+
+# ---------------------------------------------------------------------------
 # API runtime image
 # ---------------------------------------------------------------------------
 FROM gcr.io/distroless/static-debian12:nonroot AS api
@@ -121,10 +132,11 @@ RUN npm run build
 
 # ---------------------------------------------------------------------------
 # Frontend checks (CI): `docker buildx build --target test-web .`
-# web-build has already type-checked (tsc) and built; this adds eslint.
+# web-build has already type-checked (tsc) and built; this adds eslint and
+# the vitest suite.
 # ---------------------------------------------------------------------------
 FROM web-build AS test-web
-RUN npm run lint
+RUN npm run lint && npm test
 
 # ---------------------------------------------------------------------------
 # nginx runtime image

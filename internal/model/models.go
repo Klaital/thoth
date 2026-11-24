@@ -16,7 +16,6 @@ type CollectionType string
 const (
 	CollectionTypeMTGCards  CollectionType = "mtg_cards"
 	CollectionTypeMTGSealed CollectionType = "mtg_sealed"
-	CollectionTypeMTGDeck   CollectionType = "mtg_deck"
 	CollectionTypeBooks     CollectionType = "books"
 	CollectionTypeDVDs      CollectionType = "dvds"
 )
@@ -28,6 +27,7 @@ type Collection struct {
 	Description string
 	Type        CollectionType
 	IsPublic    bool
+	IsDefault   bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -40,21 +40,15 @@ const (
 	FoilTreatmentEtched  FoilTreatment = "etched"
 )
 
-type CardCategory string
-
-const (
-	CardCategoryNone      CardCategory = "none"
-	CardCategoryCommander CardCategory = "commander"
-	CardCategoryDeck      CardCategory = "deck"
-	CardCategorySideboard CardCategory = "sideboard"
-)
+// DefaultLanguage is stored when a card's language isn't given.
+const DefaultLanguage = "en"
 
 type CardItem struct {
 	ID              int64
 	CollectionID    int64
 	ScryfallCardID  string
 	FoilTreatment   FoilTreatment
-	Category        CardCategory
+	Language        string
 	Quantity        int32
 	Notes           string
 	CardName        string
@@ -65,24 +59,55 @@ type CardItem struct {
 	PricesJSON      string
 }
 
+type DeckBoard string
+
+const (
+	DeckBoardCommander DeckBoard = "commander"
+	DeckBoardMain      DeckBoard = "main"
+	DeckBoardSideboard DeckBoard = "sideboard"
+)
+
+type Deck struct {
+	ID        int64
+	OwnerID   int64
+	Name      string
+	Notes     string
+	IsPublic  bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type DeckCard struct {
+	ID                       int64
+	DeckID                   int64
+	CardName                 string
+	Board                    DeckBoard
+	Quantity                 int32
+	PreferredScryfallCardID  string
+	PreferredSetCode         string
+	PreferredCollectorNumber string
+	ImageURI                 string
+	ScryfallURI              string
+}
+
 type SealedItemType string
 
 const (
-	SealedItemTypeSecretLair            SealedItemType = "secret_lair"
-	SealedItemTypePlayBooster           SealedItemType = "play_booster"
-	SealedItemTypePlayBoosterBox        SealedItemType = "play_booster_box"
-	SealedItemTypeCollectorBooster      SealedItemType = "collector_booster"
-	SealedItemTypeCollectorBoosterBox   SealedItemType = "collector_booster_box"
-	SealedItemTypeBundle                SealedItemType = "bundle"
-	SealedItemTypeDraftNight            SealedItemType = "draft_night"
-	SealedItemTypeDraftBooster          SealedItemType = "draft_booster"
-	SealedItemTypeDraftBoosterBox       SealedItemType = "draft_booster_box"
-	SealedItemTypeSetBooster            SealedItemType = "set_booster"
-	SealedItemTypeSetBoosterBox         SealedItemType = "set_booster_box"
-	SealedItemTypeJumpstartBooster      SealedItemType = "jumpstart_booster"
-	SealedItemTypeJumpstartBoosterBox   SealedItemType = "jumpstart_booster_box"
-	SealedItemTypeCommanderPrecon       SealedItemType = "commander_precon"
-	SealedItemTypePrereleasePack        SealedItemType = "prerelease_pack"
+	SealedItemTypeSecretLair          SealedItemType = "secret_lair"
+	SealedItemTypePlayBooster         SealedItemType = "play_booster"
+	SealedItemTypePlayBoosterBox      SealedItemType = "play_booster_box"
+	SealedItemTypeCollectorBooster    SealedItemType = "collector_booster"
+	SealedItemTypeCollectorBoosterBox SealedItemType = "collector_booster_box"
+	SealedItemTypeBundle              SealedItemType = "bundle"
+	SealedItemTypeDraftNight          SealedItemType = "draft_night"
+	SealedItemTypeDraftBooster        SealedItemType = "draft_booster"
+	SealedItemTypeDraftBoosterBox     SealedItemType = "draft_booster_box"
+	SealedItemTypeSetBooster          SealedItemType = "set_booster"
+	SealedItemTypeSetBoosterBox       SealedItemType = "set_booster_box"
+	SealedItemTypeJumpstartBooster    SealedItemType = "jumpstart_booster"
+	SealedItemTypeJumpstartBoosterBox SealedItemType = "jumpstart_booster_box"
+	SealedItemTypeCommanderPrecon     SealedItemType = "commander_precon"
+	SealedItemTypePrereleasePack      SealedItemType = "prerelease_pack"
 )
 
 type SealedItem struct {

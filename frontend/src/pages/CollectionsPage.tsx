@@ -9,7 +9,6 @@ import {
   FOIL_TREATMENT_LABELS,
 } from "../api/types";
 import AppLayout from "../components/AppLayout";
-import CommanderSummary from "../components/CommanderSummary";
 
 export default function CollectionsPage() {
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -18,7 +17,11 @@ export default function CollectionsPage() {
   useEffect(() => {
     apiFetch("/v1/collections")
       .then((r) => r.json())
-      .then((data) => setCollections(data.collections ?? []))
+      .then((data) => {
+        // The default collection first, then newest first as the API returns them.
+        const all: Collection[] = data.collections ?? [];
+        setCollections([...all.filter((c) => c.isDefault), ...all.filter((c) => !c.isDefault)]);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -70,7 +73,7 @@ export default function CollectionsPage() {
         ) : collections.length === 0 ? (
           <div className="empty-state">
             <h2>No collections yet</h2>
-            <p>Create your first collection to start tracking your cards, books, or other items.</p>
+            <p>Create your first collection to start tracking your cards, sealed product, books, or other items.</p>
             <Link to="/collections/new">
               <button className="btn-sm">Create a collection</button>
             </Link>
@@ -105,14 +108,12 @@ export default function CollectionsPage() {
                   >
                     <h2>{c.name}</h2>
                     {cardMatches && <SearchMatches items={cardMatches} />}
-                    {c.commanders && c.commanders.length > 0 && (
-                      <CommanderSummary commanders={c.commanders} />
-                    )}
                     {c.description && <p className="card-desc">{c.description}</p>}
                     <div className="card-meta">
                       <span className={collectionTypeBadgeClass(c.type)}>
                         {COLLECTION_TYPE_LABELS[c.type]}
                       </span>
+                      {c.isDefault && <span className="badge">Default</span>}
                       {c.isPublic && <span className="badge badge-public">Public</span>}
                     </div>
                   </Link>
@@ -140,6 +141,7 @@ function SearchMatches({ items }: { items: CardItem[] }) {
             {item.setCode.toUpperCase()}
             {item.foilTreatment !== "FOIL_TREATMENT_NONFOIL" &&
               ` · ${FOIL_TREATMENT_LABELS[item.foilTreatment]}`}
+            {item.language && item.language !== "en" && ` · ${item.language.toUpperCase()}`}
           </span>
         </li>
       ))}
