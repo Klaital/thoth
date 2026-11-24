@@ -47,6 +47,9 @@ func Connect(ctx context.Context, dsn string) (*sql.DB, error) {
 				return trace.SpanContextFromContext(ctx).IsValid()
 			},
 		}),
+		// driver.ErrSkip is the driver's routine "fall back to prepare"
+		// signal, not a failure; don't count it as a DB error.
+		otelsql.WithDisableSkipErrMeasurement(true),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("opening DB: %w", err)

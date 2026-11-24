@@ -30,6 +30,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Dashboards are valid JSON
+        run: jq empty deploy/grafana/*.json
+
       - uses: docker/setup-buildx-action@v4
 
       # Checks run as Dockerfile stages so CI uses the same codegen and toolchain
@@ -151,3 +154,22 @@ jobs:
           cp deploy/known_hosts ~/.ssh/known_hosts
           tar -c compose.yaml compose.prod.yaml \
             | ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_HOST" "$GITHUB_SHA"
+
+  # Grafana Cloud dashboards are deployed from deploy/grafana/*.json, after
+  # the app so panels match the metrics being emitted. Skipped until
+  # GRAFANA_URL (repo variable) and GRAFANA_TOKEN (production environment
+  # secret: a service account token with the Editor role) are set.
+  dashboards:
+    needs: deploy
+    if: vars.GRAFANA_URL != ''
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Push dashboards
+        env:
+          GRAFANA_URL: ${{ vars.GRAFANA_URL }}
+          GRAFANA_TOKEN: ${{ secrets.GRAFANA_TOKEN }}
+          GRAFANA_MESSAGE: CI ${{ github.sha }}
+        run: deploy/grafana/push.sh

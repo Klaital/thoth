@@ -61,6 +61,16 @@ does the setup for both `thoth-api` and `thoth-sync`.
   CI repo variable).
 - **Local:** `docker compose --profile observability up -d` runs `grafana/otel-lgtm`
   on http://localhost:3000.
+- **Dashboards:** `deploy/grafana/*.json` (API health, Usage) are the source of
+  truth. `deploy/grafana/push.sh` upserts them into a "Thoth" folder. CI runs it
+  after each prod deploy when the `GRAFANA_URL` variable and the
+  `GRAFANA_TOKEN` secret are set. UI edits get overwritten, so export the JSON
+  and commit it.
+  - Panels filter only on `job` (service name), the one label that's the same
+    in Grafana Cloud and local Prometheus.
+  - Rate panels use a 3m minimum interval because metrics are pushed every 60s.
+  - Counters are created at 0 on startup (`telemetry.PrimeCounters`), so
+    `increase()` doesn't miss the first event after each deploy.
 
 ## Data Model
 
