@@ -159,6 +159,82 @@ func TestCollectionsAndCardsIntegration(t *testing.T) {
 		})
 		wantCode(t, err, codes.InvalidArgument)
 	})
+
+	t.Run("move keeps different language and foil separate", func(t *testing.T) {
+		// Default now holds 5 English non-foil City of Brass (from the test above).
+		other := must[*thothv1.CreateCollectionResponse](t)(colls.CreateCollection(as(alice), &thothv1.CreateCollectionRequest{
+			Name: "Binder", Type: thothv1.CollectionType_COLLECTION_TYPE_MTG_CARDS,
+		})).Collection
+		ja := add(t, other.Id, "ja", 1)
+		foil := must[*thothv1.AddCardItemResponse](t)(cards.AddCardItem(as(alice), &thothv1.AddCardItemRequest{
+			CollectionId: other.Id, ScryfallCardId: "cob-mh2", FoilTreatment: thothv1.FoilTreatment_FOIL_TREATMENT_FOIL, Quantity: 2,
+		})).Item
+		must[*thothv1.MoveCollectionItemsResponse](t)(colls.MoveCollectionItems(as(alice), &thothv1.MoveCollectionItemsRequest{
+			CollectionId: other.Id, ItemIds: []int64{ja.Id, foil.Id}, TargetCollectionId: def.Id,
+		}))
+
+		dst := must[*thothv1.ListCardItemsResponse](t)(cards.ListCardItems(as(alice), &thothv1.ListCardItemsRequest{CollectionId: def.Id}))
+		got := map[string]int32{}
+		for _, it := range dst.Items {
+			got[it.Language+"/"+it.FoilTreatment.String()] = it.Quantity
+		}
+		want := map[string]int32{
+			"en/FOIL_TREATMENT_NONFOIL": 5,
+			"ja/FOIL_TREATMENT_NONFOIL": 1,
+			"en/FOIL_TREATMENT_FOIL":    2,
+		}
+		if len(got) != len(want) {
+			t.Fatalf("default after move = %v, want %v", got, want)
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("%s = %d, want %d", k, got[k], v)
+			}
+		}
+		left := must[*thothv1.ListCardItemsResponse](t)(cards.ListCardItems(as(alice), &thothv1.ListCardItemsRequest{CollectionId: other.Id}))
+		if len(left.Items) != 0 {
+			t.Errorf("source still has %d items", len(left.Items))
+		}
+	})
+
+	t.Run("bulk import records language and skips deck headers", func(t *testing.T) {
+		imp := must[*thothv1.CreateCollectionResponse](t)(colls.CreateCollection(as(alice), &thothv1.CreateCollectionRequest{
+			Name: "German box", Type: thothv1.CollectionType_COLLECTION_TYPE_MTG_CARDS,
+		})).Collection
+		text := "Commander\n" +
+			"2 City of Brass (MH2) 259\n" +
+			"Sideboard:\n" +
+			"1 Sol Ring (C21) 263 *F*\n"
+		stream := &fakeStream[thothv1.BulkImportCardLineResult]{ctx: as(alice)}
+		if err := cards.BulkImportCardItems(&thothv1.BulkImportCardItemsRequest{CollectionId: imp.Id, Text: text, Language: "DE"}, stream); err != nil {
+			t.Fatal(err)
+		}
+		// Header lines produce no results; both card lines are added.
+		if len(stream.sent) != 2 {
+			t.Fatalf("got %d results, want 2: %v", len(stream.sent), stream.sent)
+		}
+		for i, wantLine := range []int32{2, 4} {
+			r := stream.sent[i]
+			if r.LineNumber != wantLine || r.Error != "" || r.Item == nil {
+				t.Fatalf("result %d = line %d error %q item %v, want line %d added", i, r.LineNumber, r.Error, r.Item, wantLine)
+			}
+			if r.Item.Language != "de" {
+				t.Errorf("line %d language = %q, want de", wantLine, r.Item.Language)
+			}
+		}
+		if f := stream.sent[1].Item.FoilTreatment; f != thothv1.FoilTreatment_FOIL_TREATMENT_FOIL {
+			t.Errorf("Sol Ring foil = %s, want FOIL", f)
+		}
+
+		listed := must[*thothv1.ListCardItemsResponse](t)(cards.ListCardItems(as(alice), &thothv1.ListCardItemsRequest{CollectionId: imp.Id}))
+		if len(listed.Items) != 2 {
+			t.Errorf("collection has %d rows, want 2", len(listed.Items))
+		}
+
+		err := cards.BulkImportCardItems(&thothv1.BulkImportCardItemsRequest{CollectionId: imp.Id, Text: text, Language: "german"},
+			&fakeStream[thothv1.BulkImportCardLineResult]{ctx: as(alice)})
+		wantCode(t, err, codes.InvalidArgument)
+	})
 }
 
 func TestDecksIntegration(t *testing.T) {
@@ -171,6 +247,9 @@ func TestDecksIntegration(t *testing.T) {
 	deck := must[*thothv1.CreateDeckResponse](t)(decks.CreateDeck(as(alice), &thothv1.CreateDeckRequest{
 		Name: "Atraxa", Notes: "red deckbox",
 	})).Deck
+	if deck.Name != "Atraxa" || deck.Notes != "red deckbox" || deck.IsPublic {
+		t.Fatalf("created deck = %+v", deck)
+	}
 
 	addByName := func(name string, board thothv1.DeckBoard, qty int32) (*thothv1.DeckCard, error) {
 		res, err := decks.AddDeckCard(as(alice), &thothv1.AddDeckCardRequest{DeckId: deck.Id, CardName: name, Board: board, Quantity: qty})
@@ -252,6 +331,39 @@ func TestDecksIntegration(t *testing.T) {
 		bobs := must[*thothv1.ListDecksResponse](t)(decks.ListDecks(as(bob), &thothv1.ListDecksRequest{OwnerId: proto.Int64(alice)}))
 		if len(bobs.Decks) != 0 {
 			t.Errorf("bob sees %d of alice's private decks", len(bobs.Decks))
+		}
+	})
+
+	t.Run("owner edits name, notes and visibility", func(t *testing.T) {
+		updated := must[*thothv1.UpdateDeckResponse](t)(decks.UpdateDeck(as(alice), &thothv1.UpdateDeckRequest{
+			Id: deck.Id, Name: "  Atraxa Superfriends ", Notes: "Moved to the blue box.\nNeeds more proliferate.", IsPublic: true,
+		})).Deck
+		if updated.Name != "Atraxa Superfriends" || updated.Notes != "Moved to the blue box.\nNeeds more proliferate." || !updated.IsPublic {
+			t.Errorf("updated deck = %+v", updated)
+		}
+		// Commanders are still attached after an update.
+		if len(updated.Commanders) != 1 {
+			t.Errorf("commanders after update = %v", updated.Commanders)
+		}
+
+		// Stored, and now visible to other users because it's public.
+		seen := must[*thothv1.GetDeckResponse](t)(decks.GetDeck(as(bob), &thothv1.GetDeckRequest{Id: deck.Id})).Deck
+		if seen.Name != updated.Name || seen.Notes != updated.Notes {
+			t.Errorf("bob sees %+v", seen)
+		}
+		if _, err := decks.ListDeckCards(as(bob), &thothv1.ListDeckCardsRequest{DeckId: deck.Id}); err != nil {
+			t.Errorf("bob listing public deck cards: %v", err)
+		}
+
+		_, err := decks.UpdateDeck(as(alice), &thothv1.UpdateDeckRequest{Id: deck.Id, Name: " "})
+		wantCode(t, err, codes.InvalidArgument)
+
+		// Clearing notes is allowed.
+		cleared := must[*thothv1.UpdateDeckResponse](t)(decks.UpdateDeck(as(alice), &thothv1.UpdateDeckRequest{
+			Id: deck.Id, Name: "Atraxa Superfriends", IsPublic: true,
+		})).Deck
+		if cleared.Notes != "" {
+			t.Errorf("notes after clearing = %q", cleared.Notes)
 		}
 	})
 
