@@ -129,10 +129,19 @@ jobs:
       - name: Deploy ${{ github.sha }}
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          # Public fingerprint of the key in DEPLOY_SSH_KEY (ssh-keygen -lf <key>.pub).
+          DEPLOY_KEY_FINGERPRINT: SHA256:V8lQ/xgTAlWhcs5AB21KKHTow8H3soCdY/dQyrM8N7g
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          # Strip CRs: a key pasted via the Windows clipboard gets CRLF endings,
+          # which OpenSSH rejects with "error in libcrypto".
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          fp="$(ssh-keygen -lf ~/.ssh/id_ed25519 2>/dev/null | awk '{print $2}')" || true
+          if [ "$fp" != "$DEPLOY_KEY_FINGERPRINT" ]; then
+            echo "::error::DEPLOY_SSH_KEY is not a valid copy of the deploy key (got fingerprint '${fp:-unreadable}', want $DEPLOY_KEY_FINGERPRINT). Re-paste the whole private key file, including the BEGIN/END lines."
+            exit 1
+          fi
           cp deploy/known_hosts ~/.ssh/known_hosts
           tar -c compose.yaml compose.prod.yaml \
             | ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_HOST" "$GITHUB_SHA"

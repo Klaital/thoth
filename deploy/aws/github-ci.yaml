@@ -6,13 +6,19 @@
 # Only workflow runs on the main branch of the repo can assume the role.
 # Jobs that set `environment:` get a different OIDC subject, so the build job
 # in .github/workflows/ci.yml must not use one.
+#
+# GitHub's OIDC subject names the repo as <owner>@<owner id>/<repo>@<repo id>.
+# The numeric IDs survive renames and stop a different repo that later takes
+# the same name from matching. To find them for another repo, look at the
+# userName of a failed AssumeRoleWithWebIdentity event in CloudTrail.
 AWSTemplateFormatVersion: "2010-09-09"
 Description: GitHub Actions OIDC role for pushing Thoth images to ECR
 
 Parameters:
-  GitHubRepo:
+  GitHubRepoSubject:
     Type: String
-    Default: Klaital/thoth
+    Default: Klaital@4459559/thoth@1412546506
+    Description: Repo as it appears in the OIDC sub claim (<owner>@<id>/<repo>@<id>).
   CreateOIDCProvider:
     Type: String
     Default: "true"
@@ -45,7 +51,7 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepo}:ref:refs/heads/main
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepoSubject}:ref:refs/heads/main
       Policies:
         - PolicyName: ecr-push
           PolicyDocument:
