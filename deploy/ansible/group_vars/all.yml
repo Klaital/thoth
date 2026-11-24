@@ -29,6 +29,9 @@ ecr_registry: 813809418199.dkr.ecr.us-west-2.amazonaws.com
 aws_region: us-west-2
 # Profile in ~{{ deploy_user }}/.aws used to pull from ECR (assumes thoth-ecr-pull).
 ecr_aws_profile: thoth-ecr
+# Nightly scryfall sync (cron, host timezone): midnight.
+sync_cron_hour: "0"
+sync_cron_minute: "0"
 # GitHub Actions' deploy key. It is pinned to thoth-deploy via a forced
 # command, so it can't open a shell. Private half is the DEPLOY_SSH_KEY secret.
 ci_deploy_pubkey: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILkll95gmq9kg4CfLJZWbMKa4ZQ1mahGgKU17gDvmH0b github-actions@Klaital/thoth deploy
