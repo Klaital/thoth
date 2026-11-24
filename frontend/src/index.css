@@ -204,9 +204,18 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   font-size: 16px;
   color: var(--text);
   text-decoration: none;
-  margin-right: auto;
 }
 .app-nav .brand:hover { color: var(--accent); text-decoration: none; }
+.app-nav .nav-links { display: flex; gap: 4px; margin-right: auto; }
+.app-nav .nav-links a {
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 14px;
+  text-decoration: none;
+}
+.app-nav .nav-links a:hover { color: var(--text); }
+.app-nav .nav-links a.active { color: var(--text); background: rgba(108,138,255,.1); }
 
 .btn-ghost {
   padding: 6px 14px;
@@ -670,3 +679,40 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   border-color: var(--accent);
   background: rgba(108,138,255,.08);
 }
+
+/* ── Decks ── */
+.deck-notes textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 72px;
+}
+.deck-notes-status { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
+.deck-add-card { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; }
+.deck-add-card .field { margin-bottom: 0; }
+.deck-add-card .name-field { flex: 1; min-width: 200px; position: relative; }
+.name-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  margin: 2px 0 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.name-suggestions button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  cursor: pointer;
+}
+.name-suggestions button:hover, .name-suggestions button:focus { background: rgba(108,138,255,.1); }

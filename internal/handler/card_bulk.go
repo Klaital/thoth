@@ -58,20 +58,22 @@ func parseMoxfieldLine(line string) (bulkCardLine, error) {
 	return parsed, nil
 }
 
-// categoryHeaders maps the section header lines used by deck text formats
-// ("Sideboard", "Commander:", ...) to the category of the cards that follow.
-var categoryHeaders = map[string]model.CardCategory{
-	"commander": model.CardCategoryCommander,
-	"deck":      model.CardCategoryDeck,
-	"sideboard": model.CardCategorySideboard,
+// boardHeaders maps the section header lines used by deck text formats
+// ("Sideboard", "Commander:", ...) to the deck board of the cards that follow.
+var boardHeaders = map[string]model.DeckBoard{
+	"commander": model.DeckBoardCommander,
+	"deck":      model.DeckBoardMain,
+	"main":      model.DeckBoardMain,
+	"mainboard": model.DeckBoardMain,
+	"sideboard": model.DeckBoardSideboard,
 }
 
-// parseCategoryHeader reports whether line is a section header, ignoring case
+// parseBoardHeader reports whether line is a section header, ignoring case
 // and an optional trailing colon.
-func parseCategoryHeader(line string) (model.CardCategory, bool) {
+func parseBoardHeader(line string) (model.DeckBoard, bool) {
 	key := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(line), ":")))
-	category, ok := categoryHeaders[key]
-	return category, ok
+	board, ok := boardHeaders[key]
+	return board, ok
 }
 
 // cardNameMatches reports whether the name from an import line refers to the
@@ -103,25 +105,23 @@ func (h *CardItemHandler) BulkImportCardItems(req *thothv1.BulkImportCardItemsRe
 		return err
 	}
 
+	lang, err := normalizeLanguage(req.Language)
+	if err != nil {
+		return err
+	}
 	lines := strings.Split(req.Text, "\n")
 
-	// Text with section headers is a deck list: cards before the first header
-	// are in the deck. Otherwise every card gets the requested category.
-	category := model.CardCategoryFromProto(req.Category)
-	hasHeaders := false
+	// Deck section headers are allowed (a deck export pasted into a
+	// collection) but carry no meaning for owned cards, so they're skipped.
 	cardLines := 0
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if _, ok := parseCategoryHeader(line); ok {
-			hasHeaders = true
+		if _, ok := parseBoardHeader(line); ok {
 			continue
 		}
 		cardLines++
-	}
-	if hasHeaders {
-		category = model.CardCategoryDeck
 	}
 	// Checked before importing anything so an oversized list adds nothing.
 	if cardLines > maxBulkImportLines {
@@ -133,11 +133,10 @@ func (h *CardItemHandler) BulkImportCardItems(req *thothv1.BulkImportCardItemsRe
 		if line == "" {
 			continue
 		}
-		if c, ok := parseCategoryHeader(line); ok {
-			category = c
+		if _, ok := parseBoardHeader(line); ok {
 			continue
 		}
-		res := h.importCardLine(ctx, uint64(req.CollectionId), category, line)
+		res := h.importCardLine(ctx, uint64(req.CollectionId), lang, line)
 		res.LineNumber = int32(i + 1)
 		if err := stream.Send(res); err != nil {
 			return err
@@ -148,7 +147,7 @@ func (h *CardItemHandler) BulkImportCardItems(req *thothv1.BulkImportCardItemsRe
 
 // importCardLine adds the card on one bulk import line, reporting any
 // problem in the result rather than as an error.
-func (h *CardItemHandler) importCardLine(ctx context.Context, collectionID uint64, category model.CardCategory, line string) *thothv1.BulkImportCardLineResult {
+func (h *CardItemHandler) importCardLine(ctx context.Context, collectionID uint64, lang string, line string) *thothv1.BulkImportCardLineResult {
 	res := &thothv1.BulkImportCardLineResult{Line: line}
 	parsed, err := parseMoxfieldLine(line)
 	if err != nil {
@@ -167,8 +166,8 @@ func (h *CardItemHandler) importCardLine(ctx context.Context, collectionID uint6
 	if _, err := h.queries.UpsertCardItem(ctx, db.UpsertCardItemParams{
 		CollectionID:   collectionID,
 		ScryfallCardID: card.ID,
-		FoilTreatment:  db.CardItemsFoilTreatment(parsed.Foil),
-		Category:       db.CardItemsCategory(category),
+		FoilTreatment:  db.CollectionCardsFoilTreatment(parsed.Foil),
+		Language:       lang,
 		Quantity:       parsed.Quantity,
 	}); err != nil {
 		res.Error = "failed to add card"
@@ -177,8 +176,8 @@ func (h *CardItemHandler) importCardLine(ctx context.Context, collectionID uint6
 	row, err := h.queries.GetCardItemByKey(ctx, db.GetCardItemByKeyParams{
 		CollectionID:   collectionID,
 		ScryfallCardID: card.ID,
-		FoilTreatment:  db.CardItemsFoilTreatment(parsed.Foil),
-		Category:       db.CardItemsCategory(category),
+		FoilTreatment:  db.CollectionCardsFoilTreatment(parsed.Foil),
+		Language:       lang,
 	})
 	if err != nil {
 		// The card was added; only the echo of the stored row is missing.

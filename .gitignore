@@ -28,6 +28,9 @@ frontend/dist/
 *.swp
 *.swo
 
+# Database dumps (scripts/db-dump.sh)
+/backups/
+
 # Env / secrets
 .env
 .env.*

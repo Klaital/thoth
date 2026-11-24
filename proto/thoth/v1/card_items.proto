@@ -13,14 +13,6 @@ enum FoilTreatment {
   FOIL_TREATMENT_ETCHED = 3;
 }
 
-enum CardCategory {
-  CARD_CATEGORY_UNSPECIFIED = 0;
-  CARD_CATEGORY_NONE        = 1;
-  CARD_CATEGORY_COMMANDER   = 2;
-  CARD_CATEGORY_DECK        = 3;
-  CARD_CATEGORY_SIDEBOARD   = 4;
-}
-
 message CardItem {
   int64 id = 1;
   int64 collection_id = 2;
@@ -35,10 +27,14 @@ message CardItem {
   string collector_number = 10;
   // JSON-encoded price map from Scryfall (usd, usd_foil, usd_etched, etc.)
   string prices_json = 11;
-  CardCategory category = 12;
+  // Was category; deck roles live on DeckCard.board now.
+  reserved 12;
   // Link to the card's page on scryfall.com. Empty until the syncer has run
   // since this field was added.
   string scryfall_uri = 13;
+  // Language of the physical card, as a short lowercase code ("en", "ja",
+  // "de", ...). The printing reference is still Scryfall's English row.
+  string language = 14;
 }
 
 message AddCardItemRequest {
@@ -47,8 +43,9 @@ message AddCardItemRequest {
   FoilTreatment foil_treatment = 3;
   int32 quantity = 4;
   string notes = 5;
-  // Unspecified is stored as NONE.
-  CardCategory category = 6;
+  reserved 6;
+  // Empty is stored as "en".
+  string language = 7;
 }
 
 message AddCardItemResponse {
@@ -67,9 +64,10 @@ message UpdateCardItemRequest {
   int64 id = 1;
   int32 quantity = 2;
   string notes = 3;
-  // Left unchanged when omitted. Moving into a category that already holds the
-  // same card and foil treatment merges the two rows.
-  optional CardCategory category = 4;
+  reserved 4;
+  // Left unchanged when omitted. Changing to a language the collection already
+  // holds for the same printing and foil treatment merges the two rows.
+  optional string language = 5;
 }
 
 message UpdateCardItemResponse {
@@ -85,12 +83,11 @@ message RemoveCardItemResponse {}
 message BulkImportCardItemsRequest {
   int64 collection_id = 1;
   // Moxfield text format, one card per line: "4 Lightning Bolt (M20) 141 *F*".
+  // Section header lines ("Commander", "Deck", "Sideboard") are skipped.
   string text = 2;
-  // Category for imported cards. Unspecified is stored as NONE. If the text
-  // has "Commander", "Deck" or "Sideboard" header lines, those set the
-  // category of the cards after them instead, and cards before the first
-  // header go in DECK.
-  CardCategory category = 3;
+  reserved 3;
+  // Language for every imported card. Empty is stored as "en".
+  string language = 4;
 }
 
 message BulkImportCardLineResult {

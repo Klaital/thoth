@@ -45,6 +45,7 @@ func CollectionFromDB(c db.Collection) Collection {
 		Description: c.Description.String,
 		Type:        CollectionType(c.Type),
 		IsPublic:    c.IsPublic,
+		IsDefault:   c.IsDefault,
 		CreatedAt:   c.CreatedAt,
 		UpdatedAt:   c.UpdatedAt,
 	}
@@ -58,6 +59,7 @@ func CollectionToProto(c Collection) *thothv1.Collection {
 		Description: c.Description,
 		Type:        collectionTypeToProto(c.Type),
 		IsPublic:    c.IsPublic,
+		IsDefault:   c.IsDefault,
 		CreatedAt:   timestamppb.New(c.CreatedAt),
 		UpdatedAt:   timestamppb.New(c.UpdatedAt),
 	}
@@ -69,8 +71,6 @@ func collectionTypeToProto(t CollectionType) thothv1.CollectionType {
 		return thothv1.CollectionType_COLLECTION_TYPE_MTG_CARDS
 	case CollectionTypeMTGSealed:
 		return thothv1.CollectionType_COLLECTION_TYPE_MTG_SEALED
-	case CollectionTypeMTGDeck:
-		return thothv1.CollectionType_COLLECTION_TYPE_MTG_DECK
 	case CollectionTypeBooks:
 		return thothv1.CollectionType_COLLECTION_TYPE_BOOKS
 	case CollectionTypeDVDs:
@@ -86,8 +86,6 @@ func CollectionTypeFromProto(t thothv1.CollectionType) CollectionType {
 		return CollectionTypeMTGCards
 	case thothv1.CollectionType_COLLECTION_TYPE_MTG_SEALED:
 		return CollectionTypeMTGSealed
-	case thothv1.CollectionType_COLLECTION_TYPE_MTG_DECK:
-		return CollectionTypeMTGDeck
 	case thothv1.CollectionType_COLLECTION_TYPE_BOOKS:
 		return CollectionTypeBooks
 	case thothv1.CollectionType_COLLECTION_TYPE_DVDS:
@@ -103,7 +101,7 @@ func CardItemFromDB(r db.ListCardItemsByCollectionRow) CardItem {
 		CollectionID:    int64(r.CollectionID),
 		ScryfallCardID:  r.ScryfallCardID,
 		FoilTreatment:   FoilTreatment(r.FoilTreatment),
-		Category:        CardCategory(r.Category),
+		Language:        r.Language,
 		Quantity:        r.Quantity,
 		Notes:           r.Notes.String,
 		CardName:        r.CardName,
@@ -121,7 +119,7 @@ func CardItemToProto(c CardItem) *thothv1.CardItem {
 		CollectionId:    c.CollectionID,
 		ScryfallCardId:  c.ScryfallCardID,
 		FoilTreatment:   foilTreatmentToProto(c.FoilTreatment),
-		Category:        cardCategoryToProto(c.Category),
+		Language:        c.Language,
 		Quantity:        c.Quantity,
 		Notes:           c.Notes,
 		CardName:        c.CardName,
@@ -155,29 +153,80 @@ func FoilTreatmentFromProto(f thothv1.FoilTreatment) FoilTreatment {
 	}
 }
 
-func cardCategoryToProto(c CardCategory) thothv1.CardCategory {
-	switch c {
-	case CardCategoryCommander:
-		return thothv1.CardCategory_CARD_CATEGORY_COMMANDER
-	case CardCategoryDeck:
-		return thothv1.CardCategory_CARD_CATEGORY_DECK
-	case CardCategorySideboard:
-		return thothv1.CardCategory_CARD_CATEGORY_SIDEBOARD
-	default:
-		return thothv1.CardCategory_CARD_CATEGORY_NONE
+func DeckFromDB(d db.Deck) Deck {
+	return Deck{
+		ID:        int64(d.ID),
+		OwnerID:   int64(d.OwnerID),
+		Name:      d.Name,
+		Notes:     d.Notes.String,
+		IsPublic:  d.IsPublic,
+		CreatedAt: d.CreatedAt,
+		UpdatedAt: d.UpdatedAt,
 	}
 }
 
-func CardCategoryFromProto(c thothv1.CardCategory) CardCategory {
-	switch c {
-	case thothv1.CardCategory_CARD_CATEGORY_COMMANDER:
-		return CardCategoryCommander
-	case thothv1.CardCategory_CARD_CATEGORY_DECK:
-		return CardCategoryDeck
-	case thothv1.CardCategory_CARD_CATEGORY_SIDEBOARD:
-		return CardCategorySideboard
+func DeckToProto(d Deck) *thothv1.Deck {
+	return &thothv1.Deck{
+		Id:        d.ID,
+		OwnerId:   d.OwnerID,
+		Name:      d.Name,
+		Notes:     d.Notes,
+		IsPublic:  d.IsPublic,
+		CreatedAt: timestamppb.New(d.CreatedAt),
+		UpdatedAt: timestamppb.New(d.UpdatedAt),
+	}
+}
+
+func DeckCardFromDB(r db.ListDeckCardsRow) DeckCard {
+	return DeckCard{
+		ID:                       int64(r.ID),
+		DeckID:                   int64(r.DeckID),
+		CardName:                 r.CardName,
+		Board:                    DeckBoard(r.Board),
+		Quantity:                 r.Quantity,
+		PreferredScryfallCardID:  r.PreferredScryfallCardID.String,
+		PreferredSetCode:         r.PreferredSetCode.String,
+		PreferredCollectorNumber: r.PreferredCollectorNumber.String,
+		ImageURI:                 r.ImageUri.String,
+		ScryfallURI:              r.ScryfallUri.String,
+	}
+}
+
+func DeckCardToProto(c DeckCard) *thothv1.DeckCard {
+	return &thothv1.DeckCard{
+		Id:                       c.ID,
+		DeckId:                   c.DeckID,
+		CardName:                 c.CardName,
+		Board:                    DeckBoardToProto(c.Board),
+		Quantity:                 c.Quantity,
+		PreferredScryfallCardId:  c.PreferredScryfallCardID,
+		PreferredSetCode:         c.PreferredSetCode,
+		PreferredCollectorNumber: c.PreferredCollectorNumber,
+		ImageUri:                 c.ImageURI,
+		ScryfallUri:              c.ScryfallURI,
+	}
+}
+
+func DeckBoardToProto(b DeckBoard) thothv1.DeckBoard {
+	switch b {
+	case DeckBoardCommander:
+		return thothv1.DeckBoard_DECK_BOARD_COMMANDER
+	case DeckBoardSideboard:
+		return thothv1.DeckBoard_DECK_BOARD_SIDEBOARD
 	default:
-		return CardCategoryNone
+		return thothv1.DeckBoard_DECK_BOARD_MAIN
+	}
+}
+
+// DeckBoardFromProto maps UNSPECIFIED to MAIN.
+func DeckBoardFromProto(b thothv1.DeckBoard) DeckBoard {
+	switch b {
+	case thothv1.DeckBoard_DECK_BOARD_COMMANDER:
+		return DeckBoardCommander
+	case thothv1.DeckBoard_DECK_BOARD_SIDEBOARD:
+		return DeckBoardSideboard
+	default:
+		return DeckBoardMain
 	}
 }
 

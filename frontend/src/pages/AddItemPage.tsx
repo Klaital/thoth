@@ -7,9 +7,7 @@ import {
   SealedItem,
   BookDvdItem,
   FOIL_TREATMENT_LABELS,
-  CardCategory,
-  CARD_CATEGORY_LABELS,
-  CARD_CATEGORY_OPTIONS,
+  LANGUAGE_OPTIONS,
   BulkImportEntry,
 } from "../api/types";
 import AppLayout from "../components/AppLayout";
@@ -17,6 +15,7 @@ import AddCardItemForm from "../components/AddCardItemForm";
 import AddSealedItemForm from "../components/AddSealedItemForm";
 import BulkImportForm from "../components/BulkImportForm";
 import AddBookDvdItemForm from "../components/AddBookDvdItemForm";
+import { MOXFIELD_LINE, isBoardHeader } from "../api/deckText";
 
 type AnyItem = CardItem | SealedItem | BookDvdItem;
 
@@ -33,7 +32,6 @@ const CARD_BULK_PLACEHOLDER = `4 Lightning Bolt (M20) 141
 function itemsEndpoint(type: Collection["type"], id: string): string | null {
   switch (type) {
     case "COLLECTION_TYPE_MTG_CARDS":
-    case "COLLECTION_TYPE_MTG_DECK":
       return `/v1/collections/${id}/cards`;
     case "COLLECTION_TYPE_MTG_SEALED":
       return `/v1/collections/${id}/sealed`;
@@ -45,12 +43,8 @@ function itemsEndpoint(type: Collection["type"], id: string): string | null {
   }
 }
 
-// Mirrors parseMoxfieldLine and parseCategoryHeader in internal/handler/card_bulk.go.
-const MOXFIELD_LINE = /^(\d+)x?\s+(.+?)\s+\(([A-Za-z0-9]+)\)\s+(\S+)(?:\s+\*([FE])\*)?$/;
-const CARD_SECTION_HEADERS = ["commander", "deck", "sideboard"];
-
 function describeCardLine(line: string): { label: string; quantity: number } | null {
-  if (CARD_SECTION_HEADERS.includes(line.replace(/:$/, "").trim().toLowerCase())) return null;
+  if (isBoardHeader(line)) return null;
   const m = MOXFIELD_LINE.exec(line);
   if (!m) return { label: line, quantity: 1 };
   return { label: `${m[2]} · ${m[3].toUpperCase()} #${m[4]}`, quantity: Number(m[1]) };
@@ -61,9 +55,10 @@ function sortedNewestFirst(items: AnyItem[]): AnyItem[] {
 }
 
 function itemLabel(item: AnyItem, type: Collection["type"]): string {
-  if (type === "COLLECTION_TYPE_MTG_CARDS" || type === "COLLECTION_TYPE_MTG_DECK") {
+  if (type === "COLLECTION_TYPE_MTG_CARDS") {
     const c = item as CardItem;
-    return `${c.cardName} · ${c.setCode.toUpperCase()} #${c.collectorNumber} · ${FOIL_TREATMENT_LABELS[c.foilTreatment]}`;
+    const lang = c.language && c.language !== "en" ? ` · ${c.language.toUpperCase()}` : "";
+    return `${c.cardName} · ${c.setCode.toUpperCase()} #${c.collectorNumber} · ${FOIL_TREATMENT_LABELS[c.foilTreatment]}${lang}`;
   }
   if (type === "COLLECTION_TYPE_MTG_SEALED") {
     const s = item as SealedItem;
@@ -81,19 +76,14 @@ export default function AddItemPage() {
   const [recentItems, setRecentItems] = useState<AnyItem[]>([]);
   const [addCount, setAddCount] = useState(0);
   const [bulkMode, setBulkMode] = useState(false);
-  const [bulkCategory, setBulkCategory] = useState<CardCategory>("CARD_CATEGORY_NONE");
+  const [bulkLanguage, setBulkLanguage] = useState("en");
   // Lines of the latest bulk import, shown above the other recent items.
   const [bulkEntries, setBulkEntries] = useState<BulkImportEntry[]>([]);
 
   useEffect(() => {
     apiFetch(`/v1/collections/${id}`)
       .then((r) => r.json())
-      .then((data) => {
-        const col: Collection | null = data.collection ?? null;
-        setCollection(col);
-        // Cards imported into a deck are usually part of the main deck.
-        if (col?.type === "COLLECTION_TYPE_MTG_DECK") setBulkCategory("CARD_CATEGORY_DECK");
-      })
+      .then((data) => setCollection(data.collection ?? null))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -151,22 +141,21 @@ export default function AddItemPage() {
                 </button>
               </div>
             )}
-            {(collection.type === "COLLECTION_TYPE_MTG_CARDS" || collection.type === "COLLECTION_TYPE_MTG_DECK") && (
+            {collection.type === "COLLECTION_TYPE_MTG_CARDS" && (
               bulkMode ? (
                 <BulkImportForm
-                  collectionId={collectionId}
-                  endpoint="cards/bulk"
-                  extraBody={{ category: bulkCategory }}
+                  url={`/v1/collections/${id}/cards/bulk`}
+                  extraBody={{ language: bulkLanguage }}
                   extraFields={
                     <div className="field">
-                      <label htmlFor="bulk-category">Category for imported cards</label>
+                      <label htmlFor="bulk-language">Language of imported cards</label>
                       <select
-                        id="bulk-category"
-                        value={bulkCategory}
-                        onChange={(e) => setBulkCategory(e.target.value as CardCategory)}
+                        id="bulk-language"
+                        value={bulkLanguage}
+                        onChange={(e) => setBulkLanguage(e.target.value)}
                       >
-                        {CARD_CATEGORY_OPTIONS.map((c) => (
-                          <option key={c} value={c}>{CARD_CATEGORY_LABELS[c]}</option>
+                        {LANGUAGE_OPTIONS.map((l) => (
+                          <option key={l.code} value={l.code}>{l.label}</option>
                         ))}
                       </select>
                     </div>
@@ -178,9 +167,8 @@ export default function AddItemPage() {
                     <>
                       Moxfield format: <em>&lt;qty&gt; &lt;name&gt; (&lt;set&gt;) &lt;number&gt;</em>, with an
                       optional <code>*F*</code> (foil) or <code>*E*</code> (etched) at the end. The set and collector
-                      number are required. Header lines <code>Commander</code>, <code>Deck</code> and{" "}
-                      <code>Sideboard</code> set the category of the cards below them (cards before the first header
-                      go in Deck) and override the category picked below.
+                      number are required. Deck section headers (<code>Commander</code>, <code>Sideboard</code>, …)
+                      are skipped; to build a deck, import into a deck instead.
                     </>
                   }
                   onSuccess={onSuccess}
@@ -193,8 +181,7 @@ export default function AddItemPage() {
             {collection.type === "COLLECTION_TYPE_MTG_SEALED" && (
               bulkMode ? (
                 <BulkImportForm
-                  collectionId={collectionId}
-                  endpoint="sealed/bulk"
+                  url={`/v1/collections/${id}/sealed/bulk`}
                   placeholder={SEALED_BULK_PLACEHOLDER}
                   onProgress={setBulkEntries}
                   help={

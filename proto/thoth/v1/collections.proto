@@ -12,14 +12,10 @@ enum CollectionType {
   COLLECTION_TYPE_UNSPECIFIED = 0;
   COLLECTION_TYPE_MTG_CARDS = 1;
   COLLECTION_TYPE_MTG_SEALED = 2;
-  COLLECTION_TYPE_MTG_DECK = 3;
+  // Was COLLECTION_TYPE_MTG_DECK; decks are their own resource (decks.proto).
+  reserved 3;
   COLLECTION_TYPE_BOOKS = 4;
   COLLECTION_TYPE_DVDS = 5;
-}
-
-message CollectionCommander {
-  string card_name = 1;
-  string image_uri = 2;
 }
 
 message Collection {
@@ -31,8 +27,10 @@ message Collection {
   bool is_public = 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
-  // Cards in the COMMANDER category, for display. Populated by Get and List.
-  repeated CollectionCommander commanders = 9;
+  // Was commanders; deck commanders are on Deck now.
+  reserved 9;
+  // Each user has exactly one default card collection. It can't be deleted.
+  bool is_default = 10;
 }
 
 message CreateCollectionRequest {
@@ -85,9 +83,9 @@ message MoveCollectionItemsRequest {
   // IDs of card, sealed or book/DVD items in collection_id, depending on its
   // type. IDs that aren't in the collection are ignored.
   repeated int64 item_ids = 2;
-  // Must hold the same kind of item. Card and deck collections are
-  // interchangeable. A card moved into a collection that already holds the
-  // same card, foil treatment and category is merged into that row.
+  // Must hold the same kind of item. A card moved into a collection that
+  // already holds the same printing, foil treatment and language is merged
+  // into that row.
   int64 target_collection_id = 3;
 }
 

@@ -1,21 +1,20 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { apiFetch } from "../api/auth";
+import { apiFetch, parseUserId } from "../api/auth";
 import {
   Collection,
   COLLECTION_TYPE_LABELS,
   collectionTypeBadgeClass,
   CardItem,
-  CardCategory,
-  CARD_CATEGORY_LABELS,
-  CARD_CATEGORY_OPTIONS,
+  LANGUAGE_OPTIONS,
+  languageLabel,
   SealedItem,
   BookDvdItem,
   FOIL_TREATMENT_LABELS,
   SEALED_ITEM_TYPE_LABELS,
 } from "../api/types";
 import AppLayout from "../components/AppLayout";
-import CommanderSummary from "../components/CommanderSummary";
+import QuantityStepper from "../components/QuantityStepper";
 import { useAuth } from "../context/AuthContext";
 
 export default function CollectionDetailPage() {
@@ -45,7 +44,7 @@ export default function CollectionDetailPage() {
   const userId = token ? parseUserId(token) : null;
   const isOwner = collection && userId !== null && String(userId) === collection.ownerId;
 
-  // Rows can disappear (e.g. merged by a category change), so only count
+  // Rows can disappear (e.g. merged by a language change), so only count
   // selected ids that are still present.
   const allIds = ((items ?? []) as Array<{ id: string }>).map((i) => i.id);
   const selectedIds = allIds.filter((i) => selected.has(i));
@@ -57,7 +56,7 @@ export default function CollectionDetailPage() {
       if (!r.ok) return;
       const data = await r.json();
       const all: Collection[] = data.collections ?? [];
-      setMoveTargets(all.filter((c) => c.id !== collection.id && itemKind(c.type) === itemKind(collection.type)));
+      setMoveTargets(all.filter((c) => c.id !== collection.id && c.type === collection.type));
     });
   }, [collection, isOwner]);
 
@@ -170,25 +169,18 @@ export default function CollectionDetailPage() {
     }
   }
 
-  async function handleCategoryChange(itemId: string, category: CardCategory) {
+  async function handleLanguageChange(itemId: string, language: string) {
     if (!collection || !items) return;
     const item = (items as CardItem[]).find((i) => i.id === itemId);
     if (!item) return;
     const resp = await apiFetch(`/v1/cards/${itemId}`, {
       method: "PATCH",
-      body: JSON.stringify({ quantity: item.quantity, notes: item.notes, category }),
+      body: JSON.stringify({ quantity: item.quantity, notes: item.notes, language }),
     });
-    // Moving into a category that already holds this card merges the rows, so refetch.
+    // Changing to a language the collection already holds for this printing
+    // merges the rows, so refetch.
     if (resp.ok) await fetchItems(collection);
   }
-
-  // Derived from the loaded cards (not collection.commanders) so it updates
-  // as soon as a card's category changes.
-  const commanders = isCardCollection(collection?.type)
-    ? ((items as CardItem[] | null) ?? [])
-        .filter((i) => i.category === "CARD_CATEGORY_COMMANDER")
-        .map((i) => ({ cardName: i.cardName, imageUri: i.imageUri }))
-    : [];
 
   if (loading) return <AppLayout><p className="loading">Loading…</p></AppLayout>;
   if (error || !collection) return <AppLayout><p className="error-page">{error ?? "Collection not found."}</p></AppLayout>;
@@ -201,18 +193,18 @@ export default function CollectionDetailPage() {
         <div className="detail-header">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
             <h1>{collection.name}</h1>
-            {isOwner && (
+            {isOwner && !collection.isDefault && (
               <button className="btn-danger" onClick={handleDeleteCollection} disabled={deleting}>
                 {deleting ? "Deleting…" : "Delete"}
               </button>
             )}
           </div>
-          {commanders.length > 0 && <CommanderSummary commanders={commanders} size="large" />}
           {collection.description && <p className="desc">{collection.description}</p>}
           <div className="meta">
             <span className={collectionTypeBadgeClass(collection.type)}>
               {COLLECTION_TYPE_LABELS[collection.type]}
             </span>
+            {collection.isDefault && <span className="badge" title="Your default card collection">Default</span>}
             {collection.isPublic && <span className="badge badge-public">Public</span>}
           </div>
         </div>
@@ -253,7 +245,7 @@ export default function CollectionDetailPage() {
               onToggleSelect={handleToggleSelect}
               onRemove={handleRemoveItem}
               onQuantityChange={handleQuantityChange}
-              onCategoryChange={handleCategoryChange}
+              onLanguageChange={handleLanguageChange}
             />
           </>
         )}
@@ -335,13 +327,13 @@ interface ItemListProps {
   onToggleSelect: (id: string) => void;
   onRemove: (id: string) => void;
   onQuantityChange: (id: string, delta: 1 | -1) => void;
-  onCategoryChange: (id: string, category: CardCategory) => void;
+  onLanguageChange: (id: string, language: string) => void;
 }
 
-function ItemList({ collection, items, onCategoryChange, ...rowProps }: ItemListProps) {
+function ItemList({ collection, items, onLanguageChange, ...rowProps }: ItemListProps) {
   const type = collection.type;
-  if (type === "COLLECTION_TYPE_MTG_CARDS" || type === "COLLECTION_TYPE_MTG_DECK") {
-    return <CardItemList items={items as CardItem[]} onCategoryChange={onCategoryChange} {...rowProps} />;
+  if (type === "COLLECTION_TYPE_MTG_CARDS") {
+    return <CardItemList items={items as CardItem[]} onLanguageChange={onLanguageChange} {...rowProps} />;
   }
   if (type === "COLLECTION_TYPE_MTG_SEALED") {
     return <SealedItemList items={items as SealedItem[]} {...rowProps} />;
@@ -387,33 +379,6 @@ function RemoveButton({ onRemove }: { onRemove: () => void }) {
   );
 }
 
-function QuantityStepper({ id, quantity, isOwner, onQuantityChange }: {
-  id: string;
-  quantity: number;
-  isOwner: boolean;
-  onQuantityChange: (id: string, delta: 1 | -1) => void;
-}) {
-  if (!isOwner) {
-    return <span className="item-qty">×{quantity}</span>;
-  }
-  return (
-    <div className="qty-stepper">
-      <button
-        className="btn-ghost"
-        onClick={() => onQuantityChange(id, -1)}
-        disabled={quantity <= 1}
-        aria-label="Decrease quantity"
-      >−</button>
-      <span className="item-qty">{quantity}</span>
-      <button
-        className="btn-ghost"
-        onClick={() => onQuantityChange(id, 1)}
-        aria-label="Increase quantity"
-      >+</button>
-    </div>
-  );
-}
-
 function unitPrice(item: CardItem): number | null {
   if (!item.pricesJson) return null;
   try {
@@ -434,15 +399,7 @@ function fmt(n: number): string {
   return "$" + n.toFixed(2);
 }
 
-// Display order for category groups; uncategorized cards go last.
-const CARD_CATEGORY_GROUP_ORDER: CardCategory[] = [
-  "CARD_CATEGORY_COMMANDER",
-  "CARD_CATEGORY_DECK",
-  "CARD_CATEGORY_SIDEBOARD",
-  "CARD_CATEGORY_NONE",
-];
-
-type CardRowProps = RowProps & { onCategoryChange: (id: string, category: CardCategory) => void };
+type CardRowProps = RowProps & { onLanguageChange: (id: string, language: string) => void };
 
 function CardItemList({ items, ...rowProps }: { items: CardItem[] } & CardRowProps) {
   let collectionTotal = 0;
@@ -453,9 +410,6 @@ function CardItemList({ items, ...rowProps }: { items: CardItem[] } & CardRowPro
     if (p !== null) { collectionTotal += p * item.quantity; hasAnyPrice = true; }
   }
 
-  // Only group when something is categorized, so plain collections stay a flat list.
-  const categorized = items.some((i) => (i.category ?? "CARD_CATEGORY_NONE") !== "CARD_CATEGORY_NONE");
-
   return (
     <>
       {hasAnyPrice && (
@@ -463,26 +417,12 @@ function CardItemList({ items, ...rowProps }: { items: CardItem[] } & CardRowPro
           Collection value: <strong>{fmt(collectionTotal)}</strong>
         </div>
       )}
-      {categorized ? (
-        CARD_CATEGORY_GROUP_ORDER.map((category) => {
-          const group = items.filter((i) => (i.category ?? "CARD_CATEGORY_NONE") === category);
-          if (group.length === 0) return null;
-          const count = group.reduce((n, i) => n + i.quantity, 0);
-          return (
-            <section key={category} className="card-category-group">
-              <h3>{CARD_CATEGORY_LABELS[category]} ({count})</h3>
-              <CardRows items={group} {...rowProps} />
-            </section>
-          );
-        })
-      ) : (
-        <CardRows items={items} {...rowProps} />
-      )}
+      <CardRows items={items} {...rowProps} />
     </>
   );
 }
 
-function CardRows({ items, isOwner, selected, onToggleSelect, onRemove, onQuantityChange, onCategoryChange }: { items: CardItem[] } & CardRowProps) {
+function CardRows({ items, isOwner, selected, onToggleSelect, onRemove, onQuantityChange, onLanguageChange }: { items: CardItem[] } & CardRowProps) {
   return (
     <div className="item-list">
       {items.map((item) => {
@@ -504,6 +444,7 @@ function CardRows({ items, isOwner, selected, onToggleSelect, onRemove, onQuanti
               </span>
               <span className="item-meta">
                 {item.setCode.toUpperCase()} #{item.collectorNumber} &middot; {FOIL_TREATMENT_LABELS[item.foilTreatment]}
+                {!isOwner && item.language && item.language !== "en" && <> &middot; {languageLabel(item.language)}</>}
               </span>
               {item.notes && <span className="item-notes">{item.notes}</span>}
             </div>
@@ -518,16 +459,20 @@ function CardRows({ items, isOwner, selected, onToggleSelect, onRemove, onQuanti
             {isOwner && (
               <select
                 className="category-select"
-                value={item.category ?? "CARD_CATEGORY_NONE"}
-                onChange={(e) => onCategoryChange(item.id, e.target.value as CardCategory)}
-                aria-label={`Category for ${item.cardName}`}
+                value={item.language || "en"}
+                onChange={(e) => onLanguageChange(item.id, e.target.value)}
+                aria-label={`Language of ${item.cardName}`}
               >
-                {CARD_CATEGORY_OPTIONS.map((c) => (
-                  <option key={c} value={c}>{CARD_CATEGORY_LABELS[c]}</option>
+                {/* Keep an unlisted stored code selectable. */}
+                {!LANGUAGE_OPTIONS.some((l) => l.code === (item.language || "en")) && (
+                  <option value={item.language}>{languageLabel(item.language)}</option>
+                )}
+                {LANGUAGE_OPTIONS.map((l) => (
+                  <option key={l.code} value={l.code}>{l.label}</option>
                 ))}
               </select>
             )}
-            <QuantityStepper id={item.id} quantity={item.quantity} isOwner={isOwner} onQuantityChange={onQuantityChange} />
+            <QuantityStepper id={item.id} quantity={item.quantity} editable={isOwner} onQuantityChange={onQuantityChange} />
             {isOwner && <RemoveButton onRemove={() => onRemove(item.id)} />}
           </div>
         );
@@ -553,7 +498,7 @@ function SealedItemList({ items, isOwner, selected, onToggleSelect, onRemove, on
               </span>
               {item.notes && <span className="item-notes">{item.notes}</span>}
             </div>
-            <QuantityStepper id={item.id} quantity={item.quantity} isOwner={isOwner} onQuantityChange={onQuantityChange} />
+            <QuantityStepper id={item.id} quantity={item.quantity} editable={isOwner} onQuantityChange={onQuantityChange} />
             {isOwner && <RemoveButton onRemove={() => onRemove(item.id)} />}
           </div>
         );
@@ -573,7 +518,7 @@ function BookDvdItemList({ items, isOwner, selected, onToggleSelect, onRemove, o
             {item.upc && <span className="item-meta">UPC: {item.upc}</span>}
             {item.notes && <span className="item-notes">{item.notes}</span>}
           </div>
-          <QuantityStepper id={item.id} quantity={item.quantity} isOwner={isOwner} onQuantityChange={onQuantityChange} />
+          <QuantityStepper id={item.id} quantity={item.quantity} editable={isOwner} onQuantityChange={onQuantityChange} />
           {isOwner && <RemoveButton onRemove={() => onRemove(item.id)} />}
         </div>
       ))}
@@ -585,20 +530,9 @@ function rowClass(selected: Set<string>, id: string): string {
   return selected.has(id) ? "item-row selected" : "item-row";
 }
 
-function isCardCollection(type: Collection["type"] | undefined): boolean {
-  return type === "COLLECTION_TYPE_MTG_CARDS" || type === "COLLECTION_TYPE_MTG_DECK";
-}
-
-// Collections of the same kind can exchange items; cards and decks share a kind.
-// Mirrors itemKind in internal/handler/collection_items.go.
-function itemKind(type: Collection["type"]): Collection["type"] {
-  return type === "COLLECTION_TYPE_MTG_DECK" ? "COLLECTION_TYPE_MTG_CARDS" : type;
-}
-
 function itemsEndpoint(type: Collection["type"], id: string): string | null {
   switch (type) {
     case "COLLECTION_TYPE_MTG_CARDS":
-    case "COLLECTION_TYPE_MTG_DECK":
       return `/v1/collections/${id}/cards`;
     case "COLLECTION_TYPE_MTG_SEALED":
       return `/v1/collections/${id}/sealed`;
@@ -613,7 +547,6 @@ function itemsEndpoint(type: Collection["type"], id: string): string | null {
 function removeEndpoint(type: Collection["type"], itemId: string): string | null {
   switch (type) {
     case "COLLECTION_TYPE_MTG_CARDS":
-    case "COLLECTION_TYPE_MTG_DECK":
       return `/v1/cards/${itemId}`;
     case "COLLECTION_TYPE_MTG_SEALED":
       return `/v1/sealed/${itemId}`;
@@ -628,7 +561,6 @@ function removeEndpoint(type: Collection["type"], itemId: string): string | null
 function updateEndpoint(type: Collection["type"], itemId: string): string | null {
   switch (type) {
     case "COLLECTION_TYPE_MTG_CARDS":
-    case "COLLECTION_TYPE_MTG_DECK":
       return `/v1/cards/${itemId}`;
     case "COLLECTION_TYPE_MTG_SEALED":
       return `/v1/sealed/${itemId}`;
@@ -646,7 +578,7 @@ function buildUpdateBody(
   itemId: string,
   newQty: number,
 ): Record<string, unknown> {
-  if (type === "COLLECTION_TYPE_MTG_CARDS" || type === "COLLECTION_TYPE_MTG_DECK") {
+  if (type === "COLLECTION_TYPE_MTG_CARDS") {
     const item = (items as CardItem[]).find((i) => i.id === itemId)!;
     return { quantity: newQty, notes: item.notes };
   }
@@ -656,13 +588,4 @@ function buildUpdateBody(
   }
   const item = (items as BookDvdItem[]).find((i) => i.id === itemId)!;
   return { title: item.title, quantity: newQty, notes: item.notes };
-}
-
-function parseUserId(token: string): number | null {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload.uid ?? null;
-  } catch {
-    return null;
-  }
 }

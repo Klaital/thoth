@@ -32,35 +32,47 @@ func (h *CardItemHandler) AddCardItem(ctx context.Context, req *thothv1.AddCardI
 	if req.Quantity <= 0 {
 		req.Quantity = 1
 	}
-	foil := model.FoilTreatmentFromProto(req.FoilTreatment)
-	category := model.CardCategoryFromProto(req.Category)
+	foil := db.CollectionCardsFoilTreatment(model.FoilTreatmentFromProto(req.FoilTreatment))
+	lang, err := normalizeLanguage(req.Language)
+	if err != nil {
+		return nil, err
+	}
 
-	_, err := h.queries.UpsertCardItem(ctx, db.UpsertCardItemParams{
+	if _, err := h.queries.UpsertCardItem(ctx, db.UpsertCardItemParams{
 		CollectionID:   uint64(req.CollectionId),
 		ScryfallCardID: req.ScryfallCardId,
-		FoilTreatment:  db.CardItemsFoilTreatment(foil),
-		Category:       db.CardItemsCategory(category),
+		FoilTreatment:  foil,
+		Language:       lang,
 		Quantity:       req.Quantity,
 		Notes:          nullString(req.Notes),
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, status.Error(codes.Internal, "failed to add card item")
 	}
 
 	// Fetch the canonical row back to return.
-	rows, err := h.queries.ListCardItemsByCollection(ctx, uint64(req.CollectionId))
+	row, err := h.queries.GetCardItemByKey(ctx, db.GetCardItemByKeyParams{
+		CollectionID:   uint64(req.CollectionId),
+		ScryfallCardID: req.ScryfallCardId,
+		FoilTreatment:  foil,
+		Language:       lang,
+	})
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to fetch card item")
 	}
-	for _, r := range rows {
-		if r.ScryfallCardID == req.ScryfallCardId && model.FoilTreatment(r.FoilTreatment) == foil && model.CardCategory(r.Category) == category {
-			return &thothv1.AddCardItemResponse{Item: model.CardItemToProto(model.CardItemFromDB(r))}, nil
-		}
-	}
-	return nil, status.Error(codes.Internal, "failed to locate upserted card item")
+	return &thothv1.AddCardItemResponse{Item: model.CardItemToProto(model.CardItemFromDB(db.ListCardItemsByCollectionRow(row)))}, nil
 }
 
 func (h *CardItemHandler) ListCardItems(ctx context.Context, req *thothv1.ListCardItemsRequest) (*thothv1.ListCardItemsResponse, error) {
+	c, err := h.queries.GetCollectionByID(ctx, uint64(req.CollectionId))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, status.Error(codes.NotFound, "collection not found")
+		}
+		return nil, status.Error(codes.Internal, "failed to fetch collection")
+	}
+	if err := authorizeCollectionRead(ctx, c); err != nil {
+		return nil, err
+	}
 	rows, err := h.queries.ListCardItemsByCollection(ctx, uint64(req.CollectionId))
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to list card items")
@@ -84,27 +96,29 @@ func (h *CardItemHandler) UpdateCardItem(ctx context.Context, req *thothv1.Updat
 		return nil, err
 	}
 
-	category := row.Category
-	if req.Category != nil {
-		category = db.CardItemsCategory(model.CardCategoryFromProto(*req.Category))
+	lang := row.Language
+	if req.Language != nil {
+		if lang, err = normalizeLanguage(*req.Language); err != nil {
+			return nil, err
+		}
 	}
 	resultID := uint64(req.Id)
 
-	if category != row.Category {
-		// The unique key includes category, so moving into a category that
-		// already holds this card and foil merges into that row.
+	if lang != row.Language {
+		// The unique key includes language, so changing to a language the
+		// collection already holds for this printing and foil merges the rows.
 		existing, err := h.queries.FindCardItem(ctx, db.FindCardItemParams{
 			CollectionID:   row.CollectionID,
 			ScryfallCardID: row.ScryfallCardID,
 			FoilTreatment:  row.FoilTreatment,
-			Category:       category,
+			Language:       lang,
 		})
 		switch {
 		case err == nil:
 			if err := h.queries.UpdateCardItem(ctx, db.UpdateCardItemParams{
 				Quantity: existing.Quantity + req.Quantity,
 				Notes:    existing.Notes,
-				Category: category,
+				Language: lang,
 				ID:       existing.ID,
 			}); err != nil {
 				return nil, status.Error(codes.Internal, "failed to update card item")
@@ -122,7 +136,7 @@ func (h *CardItemHandler) UpdateCardItem(ctx context.Context, req *thothv1.Updat
 		if err := h.queries.UpdateCardItem(ctx, db.UpdateCardItemParams{
 			Quantity: req.Quantity,
 			Notes:    nullString(req.Notes),
-			Category: category,
+			Language: lang,
 			ID:       uint64(req.Id),
 		}); err != nil {
 			return nil, status.Error(codes.Internal, "failed to update card item")

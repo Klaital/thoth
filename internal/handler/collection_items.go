@@ -12,16 +12,6 @@ import (
 	thothv1 "github.com/klaital/thoth/internal/gen/thoth/v1"
 )
 
-// itemKind groups collection types by the table their items live in. Card and
-// deck collections share one kind so cards can move freely between them;
-// books and DVDs share a table but stay separate kinds.
-func itemKind(t db.CollectionsType) db.CollectionsType {
-	if t == db.CollectionsTypeMtgDeck {
-		return db.CollectionsTypeMtgCards
-	}
-	return t
-}
-
 func (h *CollectionHandler) MoveCollectionItems(ctx context.Context, req *thothv1.MoveCollectionItemsRequest) (*thothv1.MoveCollectionItemsResponse, error) {
 	if req.CollectionId == req.TargetCollectionId {
 		return nil, status.Error(codes.InvalidArgument, "target collection must differ from source")
@@ -34,7 +24,7 @@ func (h *CollectionHandler) MoveCollectionItems(ctx context.Context, req *thothv
 	if err != nil {
 		return nil, err
 	}
-	if itemKind(src.Type) != itemKind(dst.Type) {
+	if src.Type != dst.Type {
 		return nil, status.Error(codes.InvalidArgument, "target collection holds a different kind of item")
 	}
 	if len(req.ItemIds) == 0 {
@@ -43,7 +33,7 @@ func (h *CollectionHandler) MoveCollectionItems(ctx context.Context, req *thothv
 	ids := toUint64s(req.ItemIds)
 
 	err = h.inTx(ctx, func(q *db.Queries) error {
-		switch itemKind(src.Type) {
+		switch src.Type {
 		case db.CollectionsTypeMtgCards:
 			return moveCardItems(ctx, q, src.ID, dst.ID, ids)
 		case db.CollectionsTypeMtgSealed:
@@ -67,7 +57,7 @@ func (h *CollectionHandler) MoveCollectionItems(ctx context.Context, req *thothv
 }
 
 // moveCardItems moves cards one at a time because the target may already
-// hold the same card, foil treatment and category, in which case the
+// hold the same printing, foil treatment and language, in which case the
 // quantities are merged into the existing row.
 func moveCardItems(ctx context.Context, q *db.Queries, srcID, dstID uint64, ids []uint64) error {
 	rows, err := q.ListCardItemsByIDs(ctx, db.ListCardItemsByIDsParams{CollectionID: srcID, Ids: ids})
@@ -79,7 +69,7 @@ func moveCardItems(ctx context.Context, q *db.Queries, srcID, dstID uint64, ids 
 			CollectionID:   dstID,
 			ScryfallCardID: r.ScryfallCardID,
 			FoilTreatment:  r.FoilTreatment,
-			Category:       r.Category,
+			Language:       r.Language,
 		})
 		switch {
 		case err == nil:
@@ -90,7 +80,7 @@ func moveCardItems(ctx context.Context, q *db.Queries, srcID, dstID uint64, ids 
 			if err := q.UpdateCardItem(ctx, db.UpdateCardItemParams{
 				Quantity: existing.Quantity + r.Quantity,
 				Notes:    notes,
-				Category: existing.Category,
+				Language: existing.Language,
 				ID:       existing.ID,
 			}); err != nil {
 				return err
@@ -119,7 +109,7 @@ func (h *CollectionHandler) RemoveCollectionItems(ctx context.Context, req *thot
 	}
 	ids := toUint64s(req.ItemIds)
 
-	switch itemKind(c.Type) {
+	switch c.Type {
 	case db.CollectionsTypeMtgCards:
 		err = h.queries.DeleteCardItemsByIDs(ctx, db.DeleteCardItemsByIDsParams{CollectionID: c.ID, Ids: ids})
 	case db.CollectionsTypeMtgSealed:

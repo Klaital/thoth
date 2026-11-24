@@ -1,4 +1,4 @@
-.PHONY: proto sqlc build build-sync frontend lint dev test install-tools up down logs sync deploy provision
+.PHONY: proto sqlc build build-sync frontend lint dev test install-tools up down logs sync deploy provision db-dump test-integration test-integration-docker
 
 BIN     := bin/server
 BIN_SYNC := bin/sync
@@ -48,6 +48,12 @@ dev:
 test:
 	go test ./...
 
+## Run DB integration tests against THOTH_TEST_DB_DSN (set in the devcontainer
+## to the compose db). They create and drop their own thoth_it_* databases.
+test-integration:
+	@test -n "$$THOTH_TEST_DB_DSN" || { echo "THOTH_TEST_DB_DSN is not set (it is in the devcontainer); or use make test-integration-docker" >&2; exit 1; }
+	go test -tags integration -count=1 ./...
+
 ## --- Docker --------------------------------------------------------------
 
 COMPOSE      := docker compose
@@ -62,6 +68,16 @@ down:
 
 logs:
 	$(COMPOSE) logs -f
+
+## Dump the database in ENV_FILE's DB_DSN to backups/ (e.g. ENV_FILE=.env.prod)
+ENV_FILE ?= .env
+db-dump:
+	scripts/db-dump.sh $(ENV_FILE) backups
+
+## Run the DB integration tests in containers against the compose db, as CI does
+COMPOSE_TEST := $(COMPOSE) -f compose.yaml -f compose.override.yaml -f compose.test.yaml
+test-integration-docker:
+	$(COMPOSE_TEST) run --rm --build test-integration
 
 ## Run the scryfall sync job in a container
 sync:

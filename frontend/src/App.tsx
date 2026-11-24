@@ -6,6 +6,9 @@ import CollectionsPage from "./pages/CollectionsPage";
 import CollectionDetailPage from "./pages/CollectionDetailPage";
 import NewCollectionPage from "./pages/NewCollectionPage";
 import AddItemPage from "./pages/AddItemPage";
+import DecksPage from "./pages/DecksPage";
+import NewDeckPage from "./pages/NewDeckPage";
+import DeckDetailPage from "./pages/DeckDetailPage";
 import { useAuth } from "./context/AuthContext";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -49,6 +52,30 @@ export default function App() {
         element={
           <RequireAuth>
             <AddItemPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/decks"
+        element={
+          <RequireAuth>
+            <DecksPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/decks/new"
+        element={
+          <RequireAuth>
+            <NewDeckPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/decks/:id"
+        element={
+          <RequireAuth>
+            <DeckDetailPage />
           </RequireAuth>
         }
       />

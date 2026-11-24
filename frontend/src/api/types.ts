@@ -9,32 +9,38 @@ export const FOIL_TREATMENT_LABELS: Record<FoilTreatment, string> = {
   FOIL_TREATMENT_ETCHED:  "Etched",
 };
 
-export type CardCategory =
-  | "CARD_CATEGORY_NONE"
-  | "CARD_CATEGORY_COMMANDER"
-  | "CARD_CATEGORY_DECK"
-  | "CARD_CATEGORY_SIDEBOARD";
-
-export const CARD_CATEGORY_LABELS: Record<CardCategory, string> = {
-  CARD_CATEGORY_NONE:      "None",
-  CARD_CATEGORY_COMMANDER: "Commander",
-  CARD_CATEGORY_DECK:      "Deck",
-  CARD_CATEGORY_SIDEBOARD: "Sideboard",
-};
-
-export const CARD_CATEGORY_OPTIONS: CardCategory[] = [
-  "CARD_CATEGORY_NONE",
-  "CARD_CATEGORY_COMMANDER",
-  "CARD_CATEGORY_DECK",
-  "CARD_CATEGORY_SIDEBOARD",
+// Card languages, using Scryfall's language codes. The backend accepts any
+// 2-3 letter code; these are the ones Magic has been printed in.
+export const LANGUAGE_OPTIONS: { code: string; label: string }[] = [
+  { code: "en",  label: "English" },
+  { code: "ja",  label: "Japanese" },
+  { code: "de",  label: "German" },
+  { code: "fr",  label: "French" },
+  { code: "it",  label: "Italian" },
+  { code: "es",  label: "Spanish" },
+  { code: "pt",  label: "Portuguese" },
+  { code: "ko",  label: "Korean" },
+  { code: "ru",  label: "Russian" },
+  { code: "zhs", label: "Chinese (Simplified)" },
+  { code: "zht", label: "Chinese (Traditional)" },
+  { code: "he",  label: "Hebrew" },
+  { code: "la",  label: "Latin" },
+  { code: "grc", label: "Ancient Greek" },
+  { code: "ar",  label: "Arabic" },
+  { code: "sa",  label: "Sanskrit" },
+  { code: "ph",  label: "Phyrexian" },
 ];
+
+export function languageLabel(code: string): string {
+  return LANGUAGE_OPTIONS.find((l) => l.code === code)?.label ?? code.toUpperCase();
+}
 
 export interface CardItem {
   id: string;
   collectionId: string;
   scryfallCardId: string;
   foilTreatment: FoilTreatment;
-  category: CardCategory;
+  language: string;
   quantity: number;
   notes: string;
   cardName: string;
@@ -114,6 +120,8 @@ export interface BulkImportLineResult<T> {
   lineNumber: number;
   line: string;
   item?: T;
+  // Deck imports return the card here instead of item.
+  card?: T;
   // Card imports only: the name parsed from the line.
   name?: string;
   warning?: string;
@@ -150,15 +158,9 @@ export interface BookDvdItem {
 export type CollectionType =
   | "COLLECTION_TYPE_MTG_CARDS"
   | "COLLECTION_TYPE_MTG_SEALED"
-  | "COLLECTION_TYPE_MTG_DECK"
   | "COLLECTION_TYPE_BOOKS"
   | "COLLECTION_TYPE_DVDS"
   | "COLLECTION_TYPE_UNSPECIFIED";
-
-export interface CollectionCommander {
-  cardName: string;
-  imageUri: string;
-}
 
 export interface Collection {
   id: string;
@@ -167,13 +169,13 @@ export interface Collection {
   description: string;
   type: CollectionType;
   isPublic: boolean;
-  commanders?: CollectionCommander[];
+  // Each user has one default card collection; it can't be deleted.
+  isDefault?: boolean;
 }
 
 export const COLLECTION_TYPE_LABELS: Record<CollectionType, string> = {
   COLLECTION_TYPE_MTG_CARDS:  "MtG Cards",
   COLLECTION_TYPE_MTG_SEALED: "MtG Sealed",
-  COLLECTION_TYPE_MTG_DECK:   "MtG Deck",
   COLLECTION_TYPE_BOOKS:      "Books",
   COLLECTION_TYPE_DVDS:       "DVDs",
   COLLECTION_TYPE_UNSPECIFIED: "Unknown",
@@ -184,4 +186,51 @@ export function collectionTypeBadgeClass(type: CollectionType): string {
   if (type === "COLLECTION_TYPE_BOOKS") return "badge badge-books";
   if (type === "COLLECTION_TYPE_DVDS")  return "badge badge-dvds";
   return "badge";
+}
+
+export type DeckBoard =
+  | "DECK_BOARD_COMMANDER"
+  | "DECK_BOARD_MAIN"
+  | "DECK_BOARD_SIDEBOARD";
+
+export const DECK_BOARD_LABELS: Record<DeckBoard, string> = {
+  DECK_BOARD_COMMANDER: "Commander",
+  DECK_BOARD_MAIN:      "Main",
+  DECK_BOARD_SIDEBOARD: "Sideboard",
+};
+
+// Also the display order on the deck page.
+export const DECK_BOARD_OPTIONS: DeckBoard[] = [
+  "DECK_BOARD_COMMANDER",
+  "DECK_BOARD_MAIN",
+  "DECK_BOARD_SIDEBOARD",
+];
+
+export interface DeckCommander {
+  cardName: string;
+  imageUri: string;
+}
+
+export interface Deck {
+  id: string;
+  ownerId: string;
+  name: string;
+  notes: string;
+  isPublic: boolean;
+  updatedAt?: string;
+  commanders?: DeckCommander[];
+}
+
+export interface DeckCard {
+  id: string;
+  deckId: string;
+  // Identifies the card; any printing of this name satisfies the deck.
+  cardName: string;
+  board: DeckBoard;
+  quantity: number;
+  preferredScryfallCardId?: string;
+  preferredSetCode?: string;
+  preferredCollectorNumber?: string;
+  imageUri?: string;
+  scryfallUri?: string;
 }

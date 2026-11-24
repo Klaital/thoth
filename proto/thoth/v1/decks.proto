@@ -1,0 +1,228 @@
+syntax = "proto3";
+
+package thoth.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/klaital/thoth/internal/gen/thoth/v1;thothv1";
+
+// Decks are separate from collections: a deck card names a card, not a copy
+// you own, so a deck can be just an idea.
+
+enum DeckBoard {
+  DECK_BOARD_UNSPECIFIED = 0;
+  DECK_BOARD_COMMANDER = 1;
+  DECK_BOARD_MAIN = 2;
+  DECK_BOARD_SIDEBOARD = 3;
+}
+
+message DeckCommander {
+  string card_name = 1;
+  string image_uri = 2;
+}
+
+message Deck {
+  int64 id = 1;
+  int64 owner_id = 2;
+  string name = 3;
+  // Free text: where the deck is stored, how it plays, ideas to improve it.
+  string notes = 4;
+  bool is_public = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  // Cards on the COMMANDER board, for display. Populated by Get and List.
+  repeated DeckCommander commanders = 8;
+}
+
+message DeckCard {
+  int64 id = 1;
+  int64 deck_id = 2;
+  // Identifies the card; any printing of this name satisfies the deck.
+  string card_name = 3;
+  DeckBoard board = 4;
+  int32 quantity = 5;
+  // Optional preferred printing.
+  string preferred_scryfall_card_id = 6;
+  string preferred_set_code = 7;
+  string preferred_collector_number = 8;
+  // From the preferred printing, or any printing of the name if none.
+  string image_uri = 9;
+  string scryfall_uri = 10;
+}
+
+message CreateDeckRequest {
+  string name = 1;
+  string notes = 2;
+  bool is_public = 3;
+}
+
+message CreateDeckResponse {
+  Deck deck = 1;
+}
+
+message GetDeckRequest {
+  int64 id = 1;
+}
+
+message GetDeckResponse {
+  Deck deck = 1;
+}
+
+message ListDecksRequest {
+  // If omitted, returns the authenticated user's decks.
+  optional int64 owner_id = 1;
+}
+
+message ListDecksResponse {
+  repeated Deck decks = 1;
+}
+
+message UpdateDeckRequest {
+  int64 id = 1;
+  string name = 2;
+  string notes = 3;
+  bool is_public = 4;
+}
+
+message UpdateDeckResponse {
+  Deck deck = 1;
+}
+
+message DeleteDeckRequest {
+  int64 id = 1;
+}
+
+message DeleteDeckResponse {}
+
+message ListDeckCardsRequest {
+  int64 deck_id = 1;
+}
+
+message ListDeckCardsResponse {
+  repeated DeckCard cards = 1;
+}
+
+message AddDeckCardRequest {
+  int64 deck_id = 1;
+  // Must match a known card name (case-insensitive). Ignored when
+  // preferred_scryfall_card_id is set; the printing's name is used instead.
+  string card_name = 2;
+  // Unspecified is stored as MAIN.
+  DeckBoard board = 3;
+  // Values below 1 are stored as 1. Adding a card already on that board adds
+  // to its quantity.
+  int32 quantity = 4;
+  string preferred_scryfall_card_id = 5;
+}
+
+message AddDeckCardResponse {
+  DeckCard card = 1;
+}
+
+message UpdateDeckCardRequest {
+  int64 id = 1;
+  // Fields left unset are unchanged.
+  optional int32 quantity = 2;
+  optional DeckBoard board = 3;
+  // Empty string clears the preference.
+  optional string preferred_scryfall_card_id = 4;
+}
+
+message UpdateDeckCardResponse {
+  DeckCard card = 1;
+}
+
+message RemoveDeckCardRequest {
+  int64 id = 1;
+}
+
+message RemoveDeckCardResponse {}
+
+message BulkImportDeckCardsRequest {
+  int64 deck_id = 1;
+  // One card per line, either "4 Lightning Bolt" or Moxfield format
+  // "4 Lightning Bolt (M20) 141 *F*" (the printing becomes the preference).
+  // "Commander", "Deck"/"Main" and "Sideboard" header lines set the board of
+  // the cards after them; cards before the first header go on MAIN.
+  string text = 2;
+}
+
+message BulkImportDeckCardLineResult {
+  int32 line_number = 1;
+  string line = 2;
+  // Set when the line was added.
+  DeckCard card = 3;
+  string warning = 4;
+  string error = 5;
+  // Card name parsed from the line; empty if the line couldn't be parsed.
+  string name = 6;
+}
+
+service DeckService {
+  rpc CreateDeck(CreateDeckRequest) returns (CreateDeckResponse) {
+    option (google.api.http) = {
+      post: "/v1/decks"
+      body: "*"
+    };
+  }
+
+  rpc GetDeck(GetDeckRequest) returns (GetDeckResponse) {
+    option (google.api.http) = {
+      get: "/v1/decks/{id}"
+    };
+  }
+
+  rpc ListDecks(ListDecksRequest) returns (ListDecksResponse) {
+    option (google.api.http) = {
+      get: "/v1/decks"
+    };
+  }
+
+  rpc UpdateDeck(UpdateDeckRequest) returns (UpdateDeckResponse) {
+    option (google.api.http) = {
+      patch: "/v1/decks/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteDeck(DeleteDeckRequest) returns (DeleteDeckResponse) {
+    option (google.api.http) = {
+      delete: "/v1/decks/{id}"
+    };
+  }
+
+  rpc ListDeckCards(ListDeckCardsRequest) returns (ListDeckCardsResponse) {
+    option (google.api.http) = {
+      get: "/v1/decks/{deck_id}/cards"
+    };
+  }
+
+  rpc AddDeckCard(AddDeckCardRequest) returns (AddDeckCardResponse) {
+    option (google.api.http) = {
+      post: "/v1/decks/{deck_id}/cards"
+      body: "*"
+    };
+  }
+
+  // Streams one result per card line, in line order, as each is processed.
+  rpc BulkImportDeckCards(BulkImportDeckCardsRequest) returns (stream BulkImportDeckCardLineResult) {
+    option (google.api.http) = {
+      post: "/v1/decks/{deck_id}/cards/bulk"
+      body: "*"
+    };
+  }
+
+  rpc UpdateDeckCard(UpdateDeckCardRequest) returns (UpdateDeckCardResponse) {
+    option (google.api.http) = {
+      patch: "/v1/deck-cards/{id}"
+      body: "*"
+    };
+  }
+
+  rpc RemoveDeckCard(RemoveDeckCardRequest) returns (RemoveDeckCardResponse) {
+    option (google.api.http) = {
+      delete: "/v1/deck-cards/{id}"
+    };
+  }
+}
