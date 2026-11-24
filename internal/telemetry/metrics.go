@@ -116,3 +116,27 @@ func RegisterUsageGauges(get func(context.Context) (UsageTotals, error)) error {
 	}, users, collections, decks, cards)
 	return err
 }
+
+// PrimeCounters creates every known counter series at zero. Prometheus-style
+// backends can't see an increase that happened before a series' first
+// sample, so without this the first event of each label combination after a
+// restart would be missing from rate()/increase().
+func PrimeCounters(ctx context.Context) {
+	for _, method := range []string{"password", "google", "refresh"} {
+		for _, result := range []string{"ok", "fail"} {
+			Logins.Add(ctx, 0, metric.WithAttributes(
+				attribute.String("method", method), attribute.String("result", result)))
+		}
+	}
+	for _, kind := range []string{"card", "deck", "sealed"} {
+		for _, result := range []string{"ok", "fail"} {
+			BulkImportLines.Add(ctx, 0, metric.WithAttributes(
+				attribute.String("kind", kind), attribute.String("result", result)))
+		}
+	}
+	CardsAdded.Add(ctx, 0, SourceSingle)
+	CardsAdded.Add(ctx, 0, SourceBulk)
+	for _, c := range []metric.Int64Counter{Registrations, CollectionsCreated, DecksCreated, DeckCheckouts, DeckReturns} {
+		c.Add(ctx, 0)
+	}
+}

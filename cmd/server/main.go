@@ -93,6 +93,7 @@ func main() {
 	}); err != nil {
 		log.Fatalf("registering usage gauges: %v", err)
 	}
+	telemetry.PrimeCounters(ctx)
 	jwtSvc := auth.NewJWTService(jwtSecret)
 	googleOAuth := auth.NewGoogleOAuth(googleID, googleSec, googleRedir)
 

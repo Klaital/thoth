@@ -47,6 +47,7 @@ func main() {
 	}
 	defer sqlDB.Close()
 
+	telemetry.SyncCards.Add(ctx, 0) // see telemetry.PrimeCounters
 	start := time.Now()
 	syncer := scryfall.NewSyncer(sqlDB, *cacheDir)
 	stats, err := syncer.Sync(ctx)
